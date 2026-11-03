@@ -24,10 +24,10 @@
 | `index.html` | 画面の土台 |
 | `config.js` | OAuthクライアントID（公開して問題ない値） |
 | `style.css` | 見た目 |
-| `js/store.js` | ログイン、スプレッドシート・ドライブの読み書き、デモ用保存 |
-| `js/ocr.js` | パドック画像の読み取りルール、馬名の名寄せ |
-| `js/sketch.js` | Apple Pencil での書き込みと比率計算 |
-| `js/app.js` | 各画面 |
+| `store.js` | ログイン、スプレッドシート・ドライブの読み書き、デモ用保存 |
+| `ocr.js` | パドック画像の読み取りルール、馬名の名寄せ |
+| `sketch.js` | Apple Pencil での書き込みと比率計算 |
+| `app.js` | 各画面 |
 
 ## 秘密にする値
 
