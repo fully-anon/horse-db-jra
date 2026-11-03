@@ -42,6 +42,32 @@
     return { count: good.length, paces, weight: ws.length ? (Math.min(...ws) === Math.max(...ws) ? `${ws[0]}kg` : `${Math.min(...ws)}〜${Math.max(...ws)}kg`) : "" };
   }
 
+  /* ---------------- 画像の貼り付け ---------------- */
+  // ボタンから：クリップボードの画像を読む（ブラウザが確認を求めることがあります）
+  async function readClipboardImage() {
+    if (!navigator.clipboard || !navigator.clipboard.read) return null;
+    try {
+      const items = await navigator.clipboard.read();
+      for (const it of items) {
+        const t = it.types.find(x => x.startsWith("image/"));
+        if (t) { const b = await it.getType(t); return new File([b], "paste." + (t.split("/")[1] || "png"), { type: t }); }
+      }
+      return "noimage";
+    } catch (e) { return null; }
+  }
+  // Ctrl+V や長押しメニューの「ペースト」から
+  function imageFromPasteEvent(e) {
+    const items = [...((e.clipboardData && e.clipboardData.items) || [])];
+    const it = items.find(x => x.kind === "file" && x.type.startsWith("image/"));
+    return it ? it.getAsFile() : null;
+  }
+  let onPaste = null; // 表示中の画面の貼り付け処理
+  document.addEventListener("paste", e => {
+    if (!onPaste) return;
+    const t = e.target; if (t && (t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && t.type !== "file")) && !imageFromPasteEvent(e)) return;
+    onPaste(e);
+  });
+
   /* ---------------- 保存と通信エラー ---------------- */
   async function save(table, obj) {
     const t = nowStr(); obj.updated = t; if (table !== "races" && !obj.created) obj.created = t;
@@ -81,7 +107,7 @@
     const [, name = "", id = ""] = (location.hash.replace(/^#\/?/, "#/").match(/^#\/([^/]*)\/?(.*)$/) || []);
     const fn = routes[name] || viewRaces;
     document.querySelectorAll(".nav a").forEach(a => a.setAttribute("aria-current", a.dataset.nav === (name === "race" ? "races" : name === "horse" ? "horses" : name === "entry" ? "" : name || "races") ? "page" : "false"));
-    $("#alerts").innerHTML = "";
+    $("#alerts").innerHTML = ""; onPaste = null;
     const old = main(), fresh = old.cloneNode(false); old.replaceWith(fresh); // 前の画面のイベントを消す
     fn(decodeURIComponent(id));
     applyDraft();
@@ -340,8 +366,9 @@ ${JSON.stringify(data, null, 1)}`;
     main().innerHTML = `
       <div class="head"><div><p class="eyebrow">パドック登録</p><h1>画像から出走を登録</h1></div></div>
       <section class="card"><h2>1. パドック画像を選ぶ</h2>
-        <div class="slots">${SLOT.map((s, i) => `<label class="slot" id="slot${i}"><span class="slabel">${i + 1}枚目　${s}</span><span class="sprev" id="prev${i}">画像を選ぶ</span><input type="file" accept="image/*" id="file${i}"></label>`).join("")}</div>
-        <p class="muted">1枚目の画像から馬名・開催場・レース番号・馬番・馬体重を読み取ります。</p>
+        <div class="slots">${SLOT.map((s, i) => `<div class="slotwrap" data-slot="${i}"><label class="slot" id="slot${i}"><span class="slabel">${i + 1}枚目　${s}</span><span class="sprev" id="prev${i}">画像を選ぶ</span><input type="file" accept="image/*" id="file${i}"></label>
+          <button class="btn small" data-paste="${i}">コピーした画像を貼り付け</button></div>`).join("")}</div>
+        <p class="muted">1枚目の画像から馬名・開催場・レース番号・馬番・馬体重を読み取ります。画像をコピーして「貼り付け」ボタンを押すか、PCでは Ctrl＋V（Macは ⌘＋V）でも登録できます。</p>
         <div id="ocrStatus"></div>
       </section>
       <section class="card" id="confirm" hidden><h2>2. 読み取り結果を確認</h2>
@@ -398,18 +425,36 @@ ${JSON.stringify(data, null, 1)}`;
     ["nname", "ndate", "nvenue", "nraceNo"].forEach(f => { $("#" + f).addEventListener("input", () => { markMissing(); updateMatch(); }); });
     ["numaban", "nweight"].forEach(f => $("#" + f).addEventListener("input", markMissing));
 
+    let activeSlot = null; // 最後に触った枠（キーボード貼り付けの行き先）
+    async function useFile(i, f) {
+      try {
+        const s = await shrinkImage(f); st.files[i] = s;
+        if (st.previews[i]) URL.revokeObjectURL(st.previews[i]);
+        st.previews[i] = URL.createObjectURL(s.blob);
+        $("#prev" + i).innerHTML = `<img src="${st.previews[i]}" alt="${SLOT[i]}">`; $("#slot" + i).classList.add("has");
+        toast(`${i + 1}枚目（${SLOT[i]}）に画像を入れました`);
+      } catch (err) { toast("この画像は読み込めませんでした。JPEGかPNGで試してください"); return; }
+      if (i === 0) await doOCR();
+    }
     [0, 1].forEach(i => {
-      $("#file" + i).addEventListener("change", async e => {
-        const f = e.target.files && e.target.files[0]; e.target.value = ""; if (!f) return;
-        try {
-          const s = await shrinkImage(f); st.files[i] = s;
-          if (st.previews[i]) URL.revokeObjectURL(st.previews[i]);
-          st.previews[i] = URL.createObjectURL(s.blob);
-          $("#prev" + i).innerHTML = `<img src="${st.previews[i]}" alt="${SLOT[i]}">`; $("#slot" + i).classList.add("has");
-        } catch (err) { toast("この画像は読み込めませんでした。JPEGかPNGで試してください"); return; }
-        if (i === 0) await doOCR();
-      });
+      $("#file" + i).addEventListener("change", e => { const f = e.target.files && e.target.files[0]; e.target.value = ""; activeSlot = i; if (f) useFile(i, f); });
     });
+    main().addEventListener("click", async e => {
+      const w = e.target.closest("[data-slot]"); if (w) activeSlot = +w.dataset.slot;
+      const b = e.target.closest("[data-paste]"); if (!b) return;
+      const i = +b.dataset.paste; activeSlot = i;
+      const f = await readClipboardImage();
+      if (f instanceof Blob) useFile(i, f);
+      else if (f === "noimage") toast("クリップボードに画像がありません。画像をコピーしてから押してください");
+      else toast("貼り付けできませんでした。PCでは Ctrl＋V（Macは ⌘＋V）で貼り付けてください");
+    });
+    // キーボードやメニューからの貼り付け：選んだ枠、なければ空いている枠へ
+    onPaste = e => {
+      const f = imageFromPasteEvent(e); if (!f) return;
+      e.preventDefault();
+      const i = activeSlot != null ? activeSlot : (!st.files[0] ? 0 : !st.files[1] ? 1 : 0);
+      useFile(i, f); activeSlot = null;
+    };
     async function doOCR() {
       $("#confirm").hidden = false;
       $("#ocrStatus").innerHTML = `<p class="muted">文字を読み取っています…</p>`;
@@ -466,7 +511,8 @@ ${JSON.stringify(data, null, 1)}`;
           <button class="sprev big" data-sketch="${i}" ${imgs[i] ? "" : "disabled"} id="sk${i}">${imgs[i] ? '<span class="muted">読み込み中…</span>' : '<span class="muted">画像なし</span>'}</button>
           <div class="chips" id="chips${i}">${window.Sketch.ratios(anno[i]).map(x => `<span class="pill">${esc(x.name)} <b>${x.value ? x.value.toFixed(3) : "—"}</b></span>`).join("")}</div>
           <div class="row"><button class="btn small" data-sketch="${i}" ${imgs[i] ? "" : "disabled"}>線を引く・比率を測る</button>
-          <label class="btn small filebtn">${imgs[i] ? "画像を差し替え" : "画像を追加"}<input type="file" accept="image/*" data-replace="${i}"></label></div>
+          <label class="btn small filebtn">${imgs[i] ? "画像を差し替え" : "画像を追加"}<input type="file" accept="image/*" data-replace="${i}"></label>
+          <button class="btn small" data-epaste="${i}">${imgs[i] ? "貼り付けで差し替え" : "貼り付けで追加"}</button></div>
         </div>`).join("")}</div></section>
       <div class="two">
         <section class="card"><h2>結果</h2><div class="grid form">
@@ -498,8 +544,26 @@ ${JSON.stringify(data, null, 1)}`;
         $("#chips" + i).innerHTML = window.Sketch.ratios(res).map(x => `<span class="pill">${esc(x.name)} <b>${x.value ? x.value.toFixed(3) : "—"}</b></span>`).join("");
       });
     });
-    document.querySelectorAll("[data-replace]").forEach(inp => inp.addEventListener("change", async ev => {
-      const i = +inp.dataset.replace, f = inp.files && inp.files[0]; inp.value = ""; if (!f) return;
+    document.querySelectorAll("[data-replace]").forEach(inp => inp.addEventListener("change", ev => {
+      const i = +inp.dataset.replace, f = inp.files && inp.files[0]; inp.value = ""; if (f) replaceImage(i, f);
+    }));
+    main().addEventListener("click", async ev => {
+      const b = ev.target.closest("[data-epaste]"); if (!b) return;
+      const i = +b.dataset.epaste;
+      if (imgs[i] && b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "線と比率も消えます。もう一度押すと差し替え"; setTimeout(() => { if (b.isConnected) { b.dataset.sure = ""; b.textContent = "貼り付けで差し替え"; } }, 4000); return; }
+      const f = await readClipboardImage();
+      if (f instanceof Blob) replaceImage(i, f);
+      else if (f === "noimage") toast("クリップボードに画像がありません。画像をコピーしてから押してください");
+      else toast("貼り付けできませんでした。PCでは Ctrl＋V（Macは ⌘＋V）で貼り付けてください");
+    });
+    // Ctrl+V：画像がない枠にだけ入れる（差し替えはボタンから）
+    onPaste = ev => {
+      const f = imageFromPasteEvent(ev); if (!f) return;
+      const i = !imgs[0] ? 0 : !imgs[1] ? 1 : -1;
+      if (i < 0) { toast("画像は2枚とも登録済みです。差し替えは「貼り付けで差し替え」ボタンから行ってください"); return; }
+      ev.preventDefault(); replaceImage(i, f);
+    };
+    async function replaceImage(i, f) {
       await run(null, async () => {
         const s = await shrinkImage(f);
         const nid = await B.putImage(s.blob, `${r.date}_${r.venue}${r.raceNo}R_${e.umaban}_${h.name}_${i + 1}.jpg`);
@@ -510,7 +574,7 @@ ${JSON.stringify(data, null, 1)}`;
         }
         await save("entries", e); toast("画像を保存しました"); render();
       });
-    }));
+    }
     $("#saveEntry").onclick = ev => run(ev.target, async () => {
       const f = readRaceForm(); if (!f.date) { showError("レース条件の日付を入力してください"); return; }
       const dup = f.venue && f.raceNo && findRace(f.date, f.venue, f.raceNo); if (dup && dup.id !== r.id) { showError("同じ日付・開催場・レース番号のレースが別にあります"); return; }
