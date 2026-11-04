@@ -507,7 +507,7 @@ ${JSON.stringify(data, null, 1)}`;
       <div class="head"><div><p class="eyebrow">出走記録</p><h1><a href="#/horse/${encodeURIComponent(h.id)}">${esc(h.name)}</a>${e.umaban ? ` <span class="muted">${esc(e.umaban)}番</span>` : ""}</h1>
         <p class="sub"><a href="#/race/${encodeURIComponent(r.id)}">${esc(raceTitle(r))}</a></p></div></div>
       <section class="card"><div class="cardhead"><h2>パドック画像</h2>
-        <button class="btn small" id="annoToggle" aria-pressed="true" ${anno.some(a => a && ((a.lines || []).length || (a.strokes || []).length)) ? "" : "hidden"}>線を隠す</button></div>
+        <div class="seg" role="group" aria-label="線の表示"><button class="segb" id="annoShow" aria-pressed="true">線を表示</button><button class="segb" id="annoHide" aria-pressed="false">線を非表示</button></div></div>
         <div class="slots" id="entrySlots">${SLOT.map((s, i) => `
         <div class="slot2"><span class="slabel">${i + 1}枚目　${s}</span>
           <button class="sprev big" data-sketch="${i}" ${imgs[i] ? "" : "disabled"} id="sk${i}">${imgs[i] ? '<span class="muted">読み込み中…</span>' : '<span class="muted">画像なし</span>'}</button>
@@ -552,9 +552,13 @@ ${JSON.stringify(data, null, 1)}`;
     const applyAnnoVis = () => {
       const show = Settings.get("hideAnno") !== "1";
       $("#entrySlots").classList.toggle("hide-ov", !show);
-      const t = $("#annoToggle"); t.setAttribute("aria-pressed", show); t.textContent = show ? "線を隠す" : "線を表示";
+      $("#annoShow").setAttribute("aria-pressed", show); $("#annoHide").setAttribute("aria-pressed", !show);
     };
-    $("#annoToggle").onclick = () => { Settings.set("hideAnno", Settings.get("hideAnno") === "1" ? "" : "1"); applyAnnoVis(); };
+    $("#annoShow").onclick = () => {
+      Settings.set("hideAnno", ""); applyAnnoVis();
+      if (!anno.some(a => a && ((a.lines || []).length || (a.strokes || []).length))) toast("この出走記録には、まだ保存した線がありません。「線を引く・比率を測る」で線を引いて「完了」を押すと表示されます");
+    };
+    $("#annoHide").onclick = () => { Settings.set("hideAnno", "1"); applyAnnoVis(); };
     applyAnnoVis();
 
     main().addEventListener("click", async ev => {
@@ -568,7 +572,7 @@ ${JSON.stringify(data, null, 1)}`;
         await save("entries", e); toast("書き込みを保存しました");
         $("#chips" + i).innerHTML = window.Sketch.ratios(res).map(x => `<span class="pill">${esc(x.name)} <b>${x.value ? x.value.toFixed(3) : "—"}</b></span>`).join("");
         drawOverlay(i);
-        $("#annoToggle").hidden = !anno.some(a => a && ((a.lines || []).length || (a.strokes || []).length));
+        Settings.set("hideAnno", ""); applyAnnoVis();
       });
     });
     document.querySelectorAll("[data-replace]").forEach(inp => inp.addEventListener("change", ev => {
@@ -630,7 +634,7 @@ ${JSON.stringify(data, null, 1)}`;
         : `<p>Googleドライブの「${esc(window.APP_CONFIG.appName)}」フォルダに保存しています。ログインの残り時間：約${Auth.minutesLeft()}分</p>
           <div class="row">${B.sheetURL() ? `<a class="btn" href="${esc(B.sheetURL())}" target="_blank" rel="noopener">スプレッドシートを開く</a>` : ""}<button class="btn" id="logout">ログアウト</button></div>`}
       </section>
-      <section class="card"><h2>このアプリについて</h2><p class="muted">競走馬DB 1.0。馬 ${D.horses.length}頭・レース ${D.races.length}件・出走 ${D.entries.length}件</p></section>`;
+      <section class="card"><h2>このアプリについて</h2><p class="muted">競走馬DB 版 ${APP_VERSION}。馬 ${D.horses.length}頭・レース ${D.races.length}件・出走 ${D.entries.length}件</p></section>`;
     $("#saveKey").onclick = () => { const v = $("#vkey").value.trim(); if (!/^[\w-]{20,}$/.test(v)) { showError("APIキーの形式が正しくないようです。コピーし直して貼り付けてください"); return; } Settings.set("visionKey", v); toast("APIキーを保存しました"); render(); };
     if ($("#delKey")) $("#delKey").onclick = () => { Settings.set("visionKey", ""); toast("APIキーを削除しました"); render(); };
     if ($("#logout")) $("#logout").onclick = () => { Auth.logout(); location.hash = "#/"; location.reload(); };
@@ -642,7 +646,23 @@ ${JSON.stringify(data, null, 1)}`;
   }
 
   /* ================= 起動 ================= */
+  // 新しい版が公開されていたら1回だけ自動で読み込み直す（古いファイルが残る対策）
+  const APP_VERSION = "4";
+  async function checkUpdate() {
+    if (!/github\.io$/.test(location.hostname)) return false;
+    try {
+      const html = await (await fetch("index.html?t=" + Date.now(), { cache: "no-store" })).text();
+      const m = /app\.js\?v=(\d+)/.exec(html);
+      if (m && m[1] !== APP_VERSION) {
+        const key = "horsedb-reloaded-" + m[1];
+        if (sessionStorage.getItem(key)) return false;
+        sessionStorage.setItem(key, "1"); location.reload(); return true;
+      }
+    } catch (e) { /* noop */ }
+    return false;
+  }
   async function boot() {
+    if (await checkUpdate()) return;
     $("#mode").hidden = !demo;
     if (!demo) {
       const r = Auth.consumeRedirect();
