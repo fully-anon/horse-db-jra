@@ -114,6 +114,8 @@ legend{font-size:13px;color:var(--muted);font-weight:700;padding:0 4px}
 .card-table .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .card-table .wrap{min-width:160px;max-width:300px}
 .umaban{font-weight:800;font-size:16px}
+.card-table td.umaban{width:1%}
+.card-table input.umaban-in{width:64px;min-height:40px;padding:6px 8px;text-align:center;font-weight:800;font-size:16px}
 .odds{color:var(--accent);font-size:15px}
 .patterns{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .patterns .muted{grid-column:1/-1;margin:0}

@@ -174,7 +174,7 @@
         <tbody>${ents.length ? ents.map(e => {
           const h = horse(e.horseId) || {}; const g = goodSummary(e.horseId); const ov = overall(e);
           return `<tr>
-            <td class="n umaban">${esc(e.umaban)}</td>
+            <td class="n umaban"><input type="number" inputmode="numeric" min="1" max="18" class="umaban-in" data-umaban="${esc(e.id)}" value="${esc(e.umaban)}" aria-label="${esc((horse(e.horseId) || {}).name)}の馬番"></td>
             <td><a href="#/horse/${encodeURIComponent(h.id)}"><b>${esc(h.name)}</b></a></td>
             <td>${esc(h.sex)}</td>
             <td>${styles(h).map(s => `<span class="pill">${esc(s)}</span>`).join(" ")}</td>
@@ -235,6 +235,21 @@
     });
 
     // Claude 分析
+    // 馬番の編集：入力欄を変えると保存し、馬番順に並べ直す
+    document.querySelectorAll("[data-umaban]").forEach(inp => {
+      inp.addEventListener("keydown", ev => { if (ev.key === "Enter") inp.blur(); });
+      inp.addEventListener("change", () => run(null, async () => {
+        const en = entry(inp.dataset.umaban); if (!en) return;
+        const raw = inp.value.trim(), v = raw ? String(+raw) : "";
+        if (raw && !(+raw >= 1 && +raw <= 18 && Number.isInteger(+raw))) { showError("馬番は1〜18の数字で入力してください"); inp.value = en.umaban; return; }
+        const dup = v && entriesOfRace(r.id).find(x => x.id !== en.id && String(x.umaban) === v);
+        if (dup) { showError(`${v}番はすでに${esc((horse(dup.horseId) || {}).name)}に使われています。先にそちらの馬番を変えてください`); inp.value = en.umaban; return; }
+        if (v === String(en.umaban || "")) return;
+        en.umaban = v; await save("entries", en);
+        toast(`${(horse(en.horseId) || {}).name}の馬番を${v ? v + "番" : "空欄"}にしました`);
+        render();
+      }));
+    });
     $("#copyBtn").onclick = () => {
       const text = analysisPrompt(r, ents);
       const fb = () => { const t = $("#copyFallback"); t.hidden = false; t.value = text; t.focus(); t.select(); toast("自動コピーできませんでした。表示された文章をすべて選択してコピーしてください"); };
@@ -647,7 +662,7 @@ ${JSON.stringify(data, null, 1)}`;
 
   /* ================= 起動 ================= */
   // 新しい版が公開されていたら1回だけ自動で読み込み直す（古いファイルが残る対策）
-  const APP_VERSION = "4";
+  const APP_VERSION = "5";
   async function checkUpdate() {
     if (!/github\.io$/.test(location.hostname)) return false;
     try {
