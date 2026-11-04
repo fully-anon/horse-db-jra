@@ -260,5 +260,31 @@
       hint(HINT[tool]); sync();
     });
   }
-  window.Sketch = { open, ratios };
+  // 保存済みの線を、画像に重ねる SVG にする（並べて表示する画面用）
+  // viewBox を画像の実寸にし、object-fit:contain の画像とぴったり重なるようにする
+  function overlay(data, w, h) {
+    if (!data || !w || !h) return "";
+    const lines = data.lines || [], strokes = data.strokes || [];
+    if (!lines.length && !strokes.length) return "";
+    const minW = Math.max(w, h) * 0.004, fs = Math.max(w, h) * 0.028;
+    const sw = x => Math.max(+x || 0, minW).toFixed(1);
+    const roles = {}; (data.ratios || []).forEach(r => { roles[r.num] = roles[r.num] || "分子"; roles[r.den] = roles[r.den] || "分母"; });
+    let s = `<svg class="ov" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">`;
+    for (const st of strokes) {
+      if (!st.pts || st.pts.length < 2) continue;
+      const pts = st.pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+      s += `<polyline points="${pts}" fill="none" stroke="rgba(0,0,0,.5)" stroke-width="${(+sw(st.w) + minW * 1.5).toFixed(1)}" stroke-linecap="round" stroke-linejoin="round"/>`;
+      s += `<polyline points="${pts}" fill="none" stroke="${esc(st.color)}" stroke-width="${sw(st.w)}" stroke-linecap="round" stroke-linejoin="round"/>`;
+    }
+    lines.forEach((l, i) => {
+      const a = `x1="${l.a.x.toFixed(1)}" y1="${l.a.y.toFixed(1)}" x2="${l.b.x.toFixed(1)}" y2="${l.b.y.toFixed(1)}"`;
+      s += `<line ${a} stroke="rgba(0,0,0,.5)" stroke-width="${(+sw(l.w) + minW * 1.5).toFixed(1)}" stroke-linecap="round"/>`;
+      s += `<line ${a} stroke="${esc(l.color)}" stroke-width="${sw(l.w)}" stroke-linecap="round"/>`;
+      const mx = (l.a.x + l.b.x) / 2, my = (l.a.y + l.b.y) / 2 - fs * 0.4;
+      const t = "L" + (i + 1) + (roles[l.id] ? " " + roles[l.id] : "");
+      s += `<text x="${mx.toFixed(1)}" y="${my.toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="700" text-anchor="middle" fill="#fff" stroke="rgba(0,0,0,.75)" stroke-width="${(fs * 0.18).toFixed(1)}" paint-order="stroke">${t}</text>`;
+    });
+    return s + "</svg>";
+  }
+  window.Sketch = { open, ratios, overlay };
 })();

@@ -506,7 +506,9 @@ ${JSON.stringify(data, null, 1)}`;
     main().innerHTML = `
       <div class="head"><div><p class="eyebrow">出走記録</p><h1><a href="#/horse/${encodeURIComponent(h.id)}">${esc(h.name)}</a>${e.umaban ? ` <span class="muted">${esc(e.umaban)}番</span>` : ""}</h1>
         <p class="sub"><a href="#/race/${encodeURIComponent(r.id)}">${esc(raceTitle(r))}</a></p></div></div>
-      <section class="card"><h2>パドック画像</h2><div class="slots">${SLOT.map((s, i) => `
+      <section class="card"><div class="cardhead"><h2>パドック画像</h2>
+        <button class="btn small" id="annoToggle" aria-pressed="true" ${anno.some(a => a && ((a.lines || []).length || (a.strokes || []).length)) ? "" : "hidden"}>線を隠す</button></div>
+        <div class="slots" id="entrySlots">${SLOT.map((s, i) => `
         <div class="slot2"><span class="slabel">${i + 1}枚目　${s}</span>
           <button class="sprev big" data-sketch="${i}" ${imgs[i] ? "" : "disabled"} id="sk${i}">${imgs[i] ? '<span class="muted">読み込み中…</span>' : '<span class="muted">画像なし</span>'}</button>
           <div class="chips" id="chips${i}">${window.Sketch.ratios(anno[i]).map(x => `<span class="pill">${esc(x.name)} <b>${x.value ? x.value.toFixed(3) : "—"}</b></span>`).join("")}</div>
@@ -529,8 +531,31 @@ ${JSON.stringify(data, null, 1)}`;
       <section class="card"><h2>レース条件</h2><p class="muted">同じレースの他の馬にも反映されます。</p>${raceForm(r)}</section>
       <div class="savebar"><button class="btn primary" id="saveEntry">保存</button></div>`;
 
-    // サムネイル
-    imgs.forEach(async (iid, i) => { if (!iid) return; try { const u = await B.imageURL(iid); if (u) $("#sk" + i).innerHTML = `<img src="${u}" alt="${SLOT[i]}">`; } catch (err) { if (err instanceof AuthError) showRelogin(); } });
+    // サムネイル（保存した線を重ねて表示）
+    const imgSize = [null, null];
+    function drawOverlay(i) {
+      const box = $("#sk" + i); if (!box || !imgSize[i]) return;
+      const old = box.querySelector(".ov"); if (old) old.remove();
+      box.insertAdjacentHTML("beforeend", window.Sketch.overlay(anno[i], imgSize[i].w, imgSize[i].h));
+    }
+    imgs.forEach(async (iid, i) => {
+      if (!iid) return;
+      try {
+        const u = await B.imageURL(iid); if (!u) return;
+        const box = $("#sk" + i); box.innerHTML = `<img src="${u}" alt="${SLOT[i]}">`;
+        const im = box.querySelector("img");
+        const done = () => { imgSize[i] = { w: im.naturalWidth, h: im.naturalHeight }; drawOverlay(i); };
+        if (im.complete && im.naturalWidth) done(); else im.addEventListener("load", done, { once: true });
+      } catch (err) { if (err instanceof AuthError) showRelogin(); }
+    });
+    // 線の表示・非表示（2枚まとめて切り替え。設定はこの端末に記憶）
+    const applyAnnoVis = () => {
+      const show = Settings.get("hideAnno") !== "1";
+      $("#entrySlots").classList.toggle("hide-ov", !show);
+      const t = $("#annoToggle"); t.setAttribute("aria-pressed", show); t.textContent = show ? "線を隠す" : "線を表示";
+    };
+    $("#annoToggle").onclick = () => { Settings.set("hideAnno", Settings.get("hideAnno") === "1" ? "" : "1"); applyAnnoVis(); };
+    applyAnnoVis();
 
     main().addEventListener("click", async ev => {
       const b = ev.target.closest("[data-sketch]"); if (!b || b.disabled) return;
@@ -542,6 +567,8 @@ ${JSON.stringify(data, null, 1)}`;
         anno[i] = res; e["anno" + (i + 1)] = JSON.stringify(res);
         await save("entries", e); toast("書き込みを保存しました");
         $("#chips" + i).innerHTML = window.Sketch.ratios(res).map(x => `<span class="pill">${esc(x.name)} <b>${x.value ? x.value.toFixed(3) : "—"}</b></span>`).join("");
+        drawOverlay(i);
+        $("#annoToggle").hidden = !anno.some(a => a && ((a.lines || []).length || (a.strokes || []).length));
       });
     });
     document.querySelectorAll("[data-replace]").forEach(inp => inp.addEventListener("change", ev => {

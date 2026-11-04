@@ -133,6 +133,11 @@ legend{font-size:13px;color:var(--muted);font-weight:700;padding:0 4px}
 .sprev img{width:100%;height:100%;object-fit:contain;background:var(--stage)}
 .slot.has .sprev,.slot2 .sprev{border-style:solid}
 .slot input[type=file]{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;font-size:100px}
+.cardhead{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.cardhead h2{margin:0}
+.slot2 .sprev{position:relative}
+.sprev .ov{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.hide-ov .ov{display:none}
 .chips{display:flex;flex-wrap:wrap;gap:6px;min-height:4px}
 .savebar{position:sticky;bottom:calc(12px + env(safe-area-inset-bottom,0px));display:flex;justify-content:flex-end;z-index:4}
 .savebar .btn{box-shadow:0 4px 14px rgba(0,0,0,.18);min-width:140px;justify-content:center;font-size:16px}
