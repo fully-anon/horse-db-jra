@@ -212,6 +212,13 @@
         <div id="addMatch"></div>
       </section>
 
+      <section class="card"><div class="cardhead"><h2>登録済みの馬から選ぶ</h2><span class="muted" id="pickCount"></span></div>
+        <p class="muted" style="margin:0">チェックした馬をまとめて出馬表に追加します。馬番は追加した後、表の中で入力できます。</p>
+        <div class="row add"><label class="grow">馬名で絞り込み<input type="search" id="pickQ" placeholder="馬名の一部" autocomplete="off"></label></div>
+        <ul class="picklist" id="pickList"></ul>
+        <div class="row"><button class="btn primary" id="pickAdd" disabled>選んだ馬を追加</button><button class="btn" id="pickClear" disabled>選択を解除</button></div>
+      </section>
+
       <section class="card"><h2>Claudeで展開分析</h2>
         <ol class="steps"><li>「分析用にコピー」を押す</li><li>Claudeアプリに貼り付けて送信する</li><li>Claudeが返した結果をコピーして、下の欄に貼り付け「反映」を押す</li></ol>
         <div class="row"><button class="btn primary" id="copyBtn" ${ents.length ? "" : "disabled"}>分析用にコピー</button></div>
@@ -262,6 +269,31 @@
     });
 
     // Claude 分析
+    // 登録済みの馬をチェックしてまとめて追加
+    const picked = new Set();
+    const lastRun = hid => { const x = entriesOfHorse(hid).find(en => en.raceId !== r.id); const rr = x && race(x.raceId); return rr ? rr.date : ""; };
+    const drawPick = () => {
+      const inRace = new Set(ents.map(x => x.horseId)), q = normName($("#pickQ").value || "");
+      const pool = D.horses.filter(h => !inRace.has(h.id));
+      const rows = pool.filter(h => !q || normName(h.name).includes(q))
+        .sort((a, b) => String(lastRun(b.id)).localeCompare(String(lastRun(a.id))) || String(b.updated).localeCompare(String(a.updated)));
+      $("#pickList").innerHTML = rows.length ? rows.map(h => `<li><label class="pickrow"><input type="checkbox" value="${esc(h.id)}" ${picked.has(h.id) ? "checked" : ""}>
+          <span class="pn">${esc(h.name)}</span><span class="muted">${esc([h.sex, styles(h).join("・"), lastRun(h.id) ? "前走 " + lastRun(h.id) : ""].filter(Boolean).join("　"))}</span></label></li>`).join("")
+        : `<li class="empty">${pool.length ? "該当する馬はいません" : "追加できる登録済みの馬はいません"}</li>`;
+      $("#pickCount").textContent = picked.size ? picked.size + "頭を選択中" : "";
+      $("#pickAdd").disabled = !picked.size; $("#pickClear").disabled = !picked.size;
+      $("#pickAdd").textContent = picked.size ? `選んだ${picked.size}頭を追加` : "選んだ馬を追加";
+    };
+    $("#pickQ").oninput = drawPick;
+    $("#pickList").addEventListener("change", ev => { const c = ev.target; if (c.type !== "checkbox") return; if (c.checked) picked.add(c.value); else picked.delete(c.value); drawPick(); });
+    $("#pickClear").onclick = () => { picked.clear(); drawPick(); };
+    $("#pickAdd").onclick = ev => run(ev.target, async () => {
+      const ids = [...picked].filter(hid => !D.entries.some(x => x.raceId === r.id && x.horseId === hid));
+      for (const hid of ids) await save("entries", { id: newId("E"), horseId: hid, raceId: r.id, umaban: "", img1: "", img2: "", anno1: "", anno2: "", finish: "", margin: "", weight: "", result: "", prediction: "", review: "" });
+      toast(`${ids.length}頭を出馬表に追加しました。馬番を入力してください`); render();
+    });
+    drawPick();
+
     // 馬番の編集：入力欄を変えると保存し、馬番順に並べ直す
     document.querySelectorAll("[data-umaban]").forEach(inp => {
       inp.addEventListener("keydown", ev => { if (ev.key === "Enter") inp.blur(); });
@@ -708,7 +740,7 @@ ${JSON.stringify(data, null, 1)}`;
 
   /* ================= 起動 ================= */
   // 新しい版が公開されていたら1回だけ自動で読み込み直す（古いファイルが残る対策）
-  const APP_VERSION = "6";
+  const APP_VERSION = "7";
   async function checkUpdate() {
     if (!/github\.io$/.test(location.hostname)) return false;
     try {
