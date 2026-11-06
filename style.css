@@ -69,6 +69,9 @@ main{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
 .banner{border-radius:10px;padding:10px 14px;margin:0 0 12px;font-size:14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .banner.warn{background:var(--warn-bg);color:var(--warn)}
 .banner.error{background:var(--err-bg);color:var(--err)}
+.btn.danger.strong{background:var(--err);border-color:var(--err);color:var(--bg)}
+.danger-zone{border:1px solid var(--err)}
+.danger-zone .msg{margin:0;line-height:1.7}
 .confirm{background:var(--panel);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px}
 
 /* フォーム */

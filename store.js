@@ -99,6 +99,11 @@
         persist(); return obj;
       },
       async log(row) { db.log.push(row); persist(); },
+      async remove(table, ids) { const s = new Set(ids); db[table] = db[table].filter(x => !s.has(x.id)); persist(); },
+      async trashImage(id) {
+        if (!id) return; mem.delete(id); if (urlCache.has(id)) { URL.revokeObjectURL(urlCache.get(id)); urlCache.delete(id); }
+        const d = await idb(); if (d) await new Promise(res => { const tx = d.transaction("img", "readwrite"); tx.objectStore("img").delete(id); tx.oncomplete = res; tx.onerror = res; });
+      },
       async putImage(blob) {
         const id = newId("img_");
         const d = await idb();
@@ -243,6 +248,24 @@
           if (m) obj._row = +m[1];
         }
         return obj;
+      },
+      // 行の削除：IDの列を読み直して該当行を特定し、下の行から順に消す（行番号のずれを防ぐ）
+      async remove(table, idList) {
+        if (!idList.length) return;
+        const sheet = TABLES[table].sheet, want = new Set(idList);
+        const col = await (await api(SHEETS + ids.sheet + "/values/" + encodeURIComponent(`'${sheet}'!A2:A`))).json();
+        const rows = []; (col.values || []).forEach((r, i) => { if (want.has(r[0])) rows.push(i + 1); }); // 0始まりの行番号（見出し=0）
+        if (!rows.length) return;
+        const info = await (await api(SHEETS + ids.sheet + "?fields=sheets.properties")).json();
+        const sh = info.sheets.find(s => s.properties.title === sheet); if (!sh) return;
+        rows.sort((a, b) => b - a);
+        await api(SHEETS + ids.sheet + ":batchUpdate", { method: "POST", headers: J, body: JSON.stringify({ requests: rows.map(r => ({ deleteDimension: { range: { sheetId: sh.properties.sheetId, dimension: "ROWS", startIndex: r, endIndex: r + 1 } } })) }) });
+      },
+      // 画像はドライブのゴミ箱へ（30日間は復元できる）
+      async trashImage(id) {
+        if (!id) return;
+        try { await api(DRIVE + "/" + id, { method: "PATCH", headers: J, body: JSON.stringify({ trashed: true }) }); } catch (e) { if (e instanceof AuthError) throw e; }
+        if (urlCache.has(id)) { URL.revokeObjectURL(urlCache.get(id)); urlCache.delete(id); }
       },
       async log(row) {
         try { await api(SHEETS + ids.sheet + "/values/" + encodeURIComponent(`'${TABLES.log.sheet}'!A1`) + ":append?valueInputOption=RAW&insertDataOption=INSERT_ROWS", { method: "POST", headers: J, body: JSON.stringify({ values: [toRow("log", row)] }) }); } catch (e) { /* 履歴の失敗は無視 */ }

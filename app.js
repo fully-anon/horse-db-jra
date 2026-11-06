@@ -93,6 +93,23 @@
       else { console.error(e); showError("予期しないエラーが起きました（" + esc(e.message || e) + "）"); }
     } finally { if (btn && btn.isConnected) { btn.disabled = false; btn.textContent = btn.dataset.label; } }
   }
+  /* ---------------- 削除 ---------------- */
+  // 出走記録を消す（画像はドライブのゴミ箱へ）。その後データを読み直して行番号を最新にする
+  async function removeEntries(list) {
+    for (const en of list) { await B.trashImage(en.img1); await B.trashImage(en.img2); }
+    await B.remove("entries", list.map(x => x.id));
+    const s = new Set(list.map(x => x.id)); D.entries = D.entries.filter(x => !s.has(x.id));
+  }
+  async function reloadData() { if (!demo) D = await B.loadAll(); }
+  // ページ内の確認欄（ブラウザの確認ダイアログは使わない）
+  function askDelete(box, html, label, onYes) {
+    box.innerHTML = `<div class="confirm danger-zone"><p class="msg">${html}</p><div class="row"><button class="btn danger strong" data-yes>${esc(label)}</button><button class="btn" data-no>やめる</button></div></div>`;
+    box.querySelector("[data-no]").onclick = () => { box.innerHTML = ""; };
+    box.querySelector("[data-yes]").onclick = e => run(e.target, onYes);
+    box.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+  const imgCount = list => list.reduce((n, en) => n + (en.img1 ? 1 : 0) + (en.img2 ? 1 : 0), 0);
+
   function showError(msg) { const box = $("#alerts"); box.innerHTML = banner(esc(msg), "error"); box.scrollIntoView({ block: "nearest" }); }
   function showRelogin() {
     const box = $("#alerts");
@@ -165,7 +182,8 @@
     const pct = v => (v * 100).toFixed(1) + "%";
     main().innerHTML = `
       <div class="head"><div><p class="eyebrow">出馬表</p><h1>${esc(raceTitle(r))}</h1><p class="sub">${esc(raceCond(r) || "条件未入力")}</p></div>
-        <button class="btn" id="editRace">レース条件を編集</button></div>
+        <div class="row"><button class="btn" id="editRace">レース条件を編集</button><button class="btn danger" id="delRace">レースを削除</button></div></div>
+      <div id="delRaceBox"></div>
       <section class="card" id="raceEdit" hidden>${raceForm(r)}<div class="row"><button class="btn primary" id="saveRace">保存</button></div></section>
       ${an ? `<section class="patterns">${an.patterns.map((p, i) => `<div class="pat"><span class="pnum">展開${i + 1}</span><b>${esc(p.name)}</b><span class="prob">${p.probability.toFixed(1)}%</span><p>${esc(p.summary)}</p></div>`).join("")}<p class="muted">分析日時 ${esc(r.analyzedAt)}。基準オッズ＝この単勝オッズを超えれば回収率100%超え</p></section>` : ""}
       <div class="tablewrap"><table class="card-table">
@@ -203,6 +221,15 @@
       </section>
       <datalist id="horseNames">${D.horses.map(h => `<option value="${esc(h.name)}"></option>`).join("")}</datalist>`;
 
+    $("#delRace").onclick = () => {
+      const list = entriesOfRace(r.id), ni = imgCount(list);
+      askDelete($("#delRaceBox"), `<b>${esc(raceTitle(r))}</b> を削除します。<br>このレースの出走記録 ${list.length}件${ni ? `（パドック画像 ${ni}枚を含む）` : ""}と、展開分析の結果も一緒に消えます。馬の情報は残ります。${ni ? "<br>画像はGoogleドライブのゴミ箱に移り、30日間は元に戻せます。" : ""}`,
+        "レースを削除する", async () => {
+          await removeEntries(list);
+          await B.remove("races", [r.id]); D.races = D.races.filter(x => x.id !== r.id);
+          await reloadData(); toast("レースを削除しました"); go("#/races");
+        });
+    };
     $("#editRace").onclick = () => { $("#raceEdit").hidden = !$("#raceEdit").hidden; };
     $("#saveRace").onclick = e => run(e.target, async () => {
       const f = readRaceForm(); if (!f.date) { showError("日付を入力してください"); return; }
@@ -349,7 +376,8 @@ ${JSON.stringify(data, null, 1)}`;
     const h = horse(id); if (!h) { main().innerHTML = banner("馬が見つかりません"); return; }
     const g = goodSummary(id), ents = entriesOfHorse(id);
     main().innerHTML = `
-      <div class="head"><div><p class="eyebrow">馬</p><h1>${esc(h.name)}</h1></div></div>
+      <div class="head"><div><p class="eyebrow">馬</p><h1>${esc(h.name)}</h1></div><button class="btn danger" id="delHorse">この馬を削除</button></div>
+      <div id="delHorseBox"></div>
       <section class="card">${horseFields(h)}<div class="row"><button class="btn primary" id="saveHorse">保存</button></div></section>
       <div class="two">
         <section class="card"><h2>好走時の展開</h2>${g.paces.length ? `<ul class="paces">${g.paces.map(p => `<li><span class="muted">${esc(raceTitle(p.race))}</span><br>${esc(p.text)}</li>`).join("")}</ul>` : '<p class="muted">好走の記録がまだありません</p>'}</section>
@@ -362,6 +390,15 @@ ${JSON.stringify(data, null, 1)}`;
           ${e.result ? `<span class="res r-${RESULTS.indexOf(e.result)}">${esc(e.result)}</span>` : ""}</a></li>`;
       }).join("") : '<li class="empty">出走記録はまだありません</li>'}</ul></section>`;
     loadThumbs();
+    $("#delHorse").onclick = () => {
+      const list = entriesOfHorse(h.id), ni = imgCount(list);
+      askDelete($("#delHorseBox"), `<b>${esc(h.name)}</b> を削除します。<br>この馬の出走記録 ${list.length}件${ni ? `（パドック画像 ${ni}枚、線と比率を含む）` : ""}も一緒に消え、出馬表からも外れます。レースそのものは残ります。${ni ? "<br>画像はGoogleドライブのゴミ箱に移り、30日間は元に戻せます。" : ""}`,
+        "この馬を削除する", async () => {
+          await removeEntries(list);
+          await B.remove("horses", [h.id]); D.horses = D.horses.filter(x => x.id !== h.id);
+          await reloadData(); toast(h.name + "を削除しました"); go("#/horses");
+        });
+    };
     $("#saveHorse").onclick = e => run(e.target, async () => {
       const v = readHorse(); if (!v.name) { showError("名前を入力してください"); return; }
       const m = D.horses.find(x => x.id !== h.id && normName(x.name) === normName(v.name)); if (m) { showError("同じ名前の馬がすでに登録されています"); return; }
@@ -544,6 +581,7 @@ ${JSON.stringify(data, null, 1)}`;
       <section class="card"><h2>予想</h2><textarea id="epred" data-f="epred" rows="3">${esc(e.prediction)}</textarea></section>
       <section class="card"><h2>展開と振返り</h2><textarea id="ereview" data-f="ereview" rows="4">${esc(e.review)}</textarea><p class="muted">結果区分が「好走」のとき、この内容が馬の「好走時の展開」に並びます。</p></section>
       <section class="card"><h2>レース条件</h2><p class="muted">同じレースの他の馬にも反映されます。</p>${raceForm(r)}</section>
+      <section class="card"><h2>この出走記録を削除</h2><p class="muted">出馬表から外したいときや、間違えて登録したときに使います。馬とレースは残ります。</p><div class="row"><button class="btn danger" id="delEntry">出走記録を削除</button></div><div id="delEntryBox"></div></section>
       <div class="savebar"><button class="btn primary" id="saveEntry">保存</button></div>`;
 
     // サムネイル（保存した線を重ねて表示）
@@ -621,6 +659,14 @@ ${JSON.stringify(data, null, 1)}`;
         await save("entries", e); toast("画像を保存しました"); render();
       });
     }
+    $("#delEntry").onclick = () => {
+      const ni = imgCount([e]);
+      askDelete($("#delEntryBox"), `<b>${esc(h.name)}</b> の <b>${esc(raceTitle(r))}</b> の出走記録を削除します。${ni ? `<br>パドック画像 ${ni}枚と線・比率も消えます（画像はGoogleドライブのゴミ箱に移り、30日間は元に戻せます）。` : ""}`,
+        "出走記録を削除する", async () => {
+          await removeEntries([e]); await reloadData(); toast("出走記録を削除しました");
+          go(r.id ? "#/race/" + r.id : "#/horse/" + h.id);
+        });
+    };
     $("#saveEntry").onclick = ev => run(ev.target, async () => {
       const f = readRaceForm(); if (!f.date) { showError("レース条件の日付を入力してください"); return; }
       const dup = f.venue && f.raceNo && findRace(f.date, f.venue, f.raceNo); if (dup && dup.id !== r.id) { showError("同じ日付・開催場・レース番号のレースが別にあります"); return; }
@@ -662,7 +708,7 @@ ${JSON.stringify(data, null, 1)}`;
 
   /* ================= 起動 ================= */
   // 新しい版が公開されていたら1回だけ自動で読み込み直す（古いファイルが残る対策）
-  const APP_VERSION = "5";
+  const APP_VERSION = "6";
   async function checkUpdate() {
     if (!/github\.io$/.test(location.hostname)) return false;
     try {
