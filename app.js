@@ -215,6 +215,7 @@
     });
   }
 
+  let manualOpen = false; // 「手で馬を追加する」を開いたままにする（追加のたびに閉じないように）
   /* ================= 出馬表 ================= */
   function viewRace(id) {
     const r = race(id); if (!r) { main().innerHTML = banner("レースが見つかりません"); return; }
@@ -231,7 +232,7 @@
       <section class="card" id="raceEdit" hidden>${raceForm(r)}<div class="row"><button class="btn primary" id="saveRace">保存</button></div></section>
       ${an ? `<section class="patterns">${an.patterns.map((p, i) => `<div class="pat"><span class="pnum">展開${i + 1}</span><b>${esc(p.name)}</b><span class="prob">${p.probability.toFixed(1)}%</span><p>${esc(p.summary)}</p></div>`).join("")}<p class="muted">分析日時 ${esc(r.analyzedAt)}。基準オッズ＝この単勝オッズを超えれば回収率100%超え</p></section>` : ""}
       <div class="tablewrap"><table class="card-table">
-        <thead><tr><th>馬番</th><th>馬名</th>${hasRes ? '<th class="n">着順</th><th class="n">着差</th>' : ""}<th>性</th><th>脚質</th><th>馬体の特徴</th><th>好走時の展開</th>
+        <thead><tr><th>馬番</th><th>馬名</th>${hasRes ? '<th class="n">着順</th><th class="n">着差</th>' : ""}<th>性</th><th>脚質</th><th>馬体の特徴</th><th>好走時の展開</th><th>予想</th>
           ${an ? an.patterns.map((p, i) => `<th class="n">展開${i + 1}</th>`).join("") + `<th class="n">総合勝率</th><th class="n">基準オッズ</th>` : ""}<th></th></tr></thead>
         <tbody>${ents.length ? ents.map(e => {
           const h = horse(e.horseId) || {}; const g = goodSummary(e.horseId); const ov = overall(e);
@@ -243,14 +244,15 @@
             <td>${styles(h).map(s => `<span class="pill">${esc(s)}</span>`).join(" ")}</td>
             <td class="wrap">${esc(h.body)}</td>
             <td class="wrap">${g.paces.length ? `<ul class="paces">${g.paces.slice(0, 3).map(p => `<li><span class="muted">${esc(p.race ? p.race.date : "")}</span> ${esc(p.text)}</li>`).join("")}</ul>${g.paces.length > 3 ? `<span class="muted">ほか${g.paces.length - 3}件</span>` : ""}` : '<span class="muted">—</span>'}</td>
+            <td class="pred"><textarea class="predin" data-pred="${esc(e.id)}" rows="2" placeholder="予想を書く" aria-label="${esc(h.name)}の予想">${esc(e.prediction)}</textarea></td>
             ${an ? an.patterns.map(p => `<td class="n">${p.rates[e.id] != null ? p.rates[e.id].toFixed(1) + "%" : "—"}</td>`).join("") + `<td class="n"><b>${ov ? pct(ov) : "—"}</b></td><td class="n"><b class="odds">${ov ? (1 / ov).toFixed(1) + "倍" : "—"}</b></td>` : ""}
             <td><a class="btn small" href="#/entry/${encodeURIComponent(e.id)}">記録・パドック</a></td></tr>`;
-        }).join("") : `<tr><td colspan="9" class="empty">出走予定馬を下から追加してください</td></tr>`}</tbody>
+        }).join("") : `<tr><td colspan="10" class="empty">出走予定馬を下から追加してください</td></tr>`}</tbody>
       </table></div>
 
       <section class="card" id="resCard"></section>
 
-      <details class="manual"><summary>手で馬を追加する（読み取りがうまくいかないとき）</summary>
+      <details class="manual" id="manualBox" ${manualOpen ? "open" : ""}><summary>手で馬を追加する（読み取りがうまくいかないとき）</summary>
       <section class="card"><h2>出走予定馬を追加</h2>
         <div class="row add">
           <label class="w-num">馬番<input type="number" inputmode="numeric" min="1" max="18" id="addUmaban" data-f="addUmaban"></label>
@@ -347,6 +349,16 @@
     // ---- 結果のスクリーンショットから読み取り（共通の処理） ----
     mountImporter($("#resCard"), r, ents.length ? "result" : "card");
 
+    $("#manualBox").addEventListener("toggle", e => { manualOpen = e.target.open; });
+    // 予想：表の中で書いて、欄から離れたら保存（出走記録の「予想」と同じもの）
+    document.querySelectorAll("[data-pred]").forEach(ta => {
+      const fit = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight + 2, 240) + "px"; };
+      fit(); ta.addEventListener("input", fit);
+      ta.addEventListener("change", () => run(null, async () => {
+        const en = entry(ta.dataset.pred); if (!en || en.prediction === ta.value) return;
+        en.prediction = ta.value; await save("entries", en); toast(`${(horse(en.horseId) || {}).name}の予想を保存しました`);
+      }));
+    });
     // 馬番の編集：入力欄を変えると保存し、馬番順に並べ直す
     document.querySelectorAll("[data-umaban]").forEach(inp => {
       inp.addEventListener("keydown", ev => { if (ev.key === "Enter") inp.blur(); });
@@ -888,7 +900,7 @@ ${JSON.stringify(data, null, 1)}`;
 
   /* ================= 起動 ================= */
   // 新しい版が公開されていたら1回だけ自動で読み込み直す（古いファイルが残る対策）
-  const APP_VERSION = "19";
+  const APP_VERSION = "20";
   async function checkUpdate() {
     if (!/github\.io$/.test(location.hostname)) return false;
     try {

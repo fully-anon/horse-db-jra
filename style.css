@@ -168,6 +168,8 @@ legend{font-size:13px;color:var(--muted);font-weight:700;padding:0 4px}
 .card-table .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .card-table .wrap{min-width:160px;max-width:300px}
 .umaban{font-weight:800;font-size:16px}
+.card-table td.pred{min-width:200px;max-width:320px}
+.card-table textarea.predin{width:100%;min-height:44px;font-size:14px;line-height:1.5;padding:6px 8px;resize:vertical;background:var(--bg)}
 .card-table td.umaban{width:1%}
 .card-table input.umaban-in{width:64px;min-height:40px;padding:6px 8px;text-align:center;font-weight:800;font-size:16px}
 .odds{color:var(--accent);font-size:15px}
