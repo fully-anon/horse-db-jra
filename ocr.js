@@ -182,10 +182,14 @@
     let badge = null, titleTxt = "";
     for (const rs of rsegs.sort((a, b) => a.cy - b.cy)) {
       if (rsegs.filter(o => o !== rs && ovl(o, rs)).length >= 2) continue; // 1R〜12R のタブの並び
-      const right = segs.filter(s => s !== rs && s.x0 >= rs.x1 - 2 && ovl(s, rs)).sort((a, b) => a.x0 - b.x0);
+      // 札（10R）とレース名は縦位置が少しずれることがある。札の近くで右側にある行のうち、文字がいちばん大きい行を採る
+      const near = segs.filter(s => s !== rs && s.x0 >= rs.x1 - 2 && s.x0 < rs.x1 + rs.h * 12 && Math.abs(s.cy - rs.cy) < Math.max(s.h, rs.h) * 1.5);
+      const groups = []; near.forEach(s => { const g = groups.find(g => Math.abs(g.cy - s.cy) < Math.max(g.h, s.h) * 0.5); if (g) { g.items.push(s); g.h = Math.max(g.h, s.h); } else groups.push({ cy: s.cy, h: s.h, items: [s] }); });
+      groups.sort((a, b) => b.h - a.h || Math.abs(a.cy - rs.cy) - Math.abs(b.cy - rs.cy));
+      const right = groups.length ? segs.filter(s => s !== rs && s.x0 >= rs.x1 - 2 && Math.abs(s.cy - groups[0].cy) < groups[0].h * 0.5).sort((a, b) => a.x0 - b.x0) : [];
       const parts = []; let last = rs;
       for (const s of right) { if (s.x0 - last.x1 > Math.max(s.h, rs.h) * 3.5) break; parts.push(s.t); last = s; }
-      const txt = parts.join("").replace(/WIN\s*\d/gi, "").replace(/[▼▽∨⌄■]/g, "").trim();
+      const txt = parts.join("").replace(/W(IN)?\s*5/gi, "").replace(/[▼▽∨⌄■]/g, "").trim(); // WIN5 の印（W5 と読まれることも）
       if (txt && /[^\d\s]/.test(txt) && !/^\d{1,2}R/i.test(txt)) { badge = rs; titleTxt = txt; break; }
     }
     const TRE = /^(\d{1,2})\s*R\s+(.+)$/;
@@ -302,6 +306,13 @@
       // 名前より左の数字：左から 着順・枠・馬番
       const nums = [];
       band.filter(s => s.x1 <= nm.x0 + nm.h * 0.3 && /^\d{1,3}$/.test(s.t)).forEach(s => {
+        const perChar = (s.x1 - s.x0) / s.t.length;
+        if (s.t.length === 2 && perChar > s.h * 1.4) { // 2つの列にまたがる「88」
+          const mid = (s.x0 + s.x1) / 2;
+          nums.push(Object.assign({}, s, { t: s.t[0], x1: mid, cx: (s.x0 + mid) / 2 }));
+          nums.push(Object.assign({}, s, { t: s.t[1], x0: mid, cx: (mid + s.x1) / 2 }));
+          return;
+        }
         if (s.t.length < 3) { nums.push(s); return; }
         // 「157」のように着順と枠番がくっついたもの：先頭2けた（18以下）＋1けた、または 1けた＋2けた に分ける
         const a = +s.t.slice(0, 2) <= 18 ? [s.t.slice(0, 2), s.t.slice(2)] : [s.t.slice(0, 1), s.t.slice(1)];
