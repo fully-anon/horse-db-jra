@@ -68,4 +68,11 @@ eq("名寄せ 別の馬は候補にしない", P.matchHorse("アヴィオン", [
 eq("ラップ 1150m", P.normLap("6.9 10.7 11.2 11.5 11.8 12.4", 1150), "150m:6.9,350m:10.7,550m:11.2,750m:11.5,950m:11.8,1150m:12.4");
 
 console.log(fail ? `\n${fail}件 失敗` : "\nすべて成功");
+// 結果5件目：4着の「4」に「st」が重なって読まれた／2着同着（2頭）の次は4着／8着が「80」
+{
+  const f = "netkeiba-pc-result-5-iphone.json", r = P.parseResultImages(fx(f), "result");
+  eq(f + " レース", [r.race.venue, r.race.raceNo, r.race.cls, r.race.surface, r.race.distance, r.race.going], ["京都", "12", "1勝", "芝", "1400", "良"]);
+  eq(f + " 着順/馬番", r.rows.map(x => x.finish + "/" + x.umaban).join(" "), "1/5 2/7 2/10 4/12 5/13 6/1 7/4 8/6 9/16 10/2 11/3 12/18 13/11 14/9 15/15 16/14 17/8 18/17");
+  eq(f + " 同着", r.rows[2].margin, "同着");
+}
 process.exit(fail ? 1 : 0);

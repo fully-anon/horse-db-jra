@@ -145,7 +145,11 @@
       const dup = keep.find(k => { const c = box(k); if (nfkc(c.t) !== nfkc(a.t)) return false; const ix = Math.min(a.x1, c.x1) - Math.max(a.x0, c.x0), iy = Math.min(a.y1, c.y1) - Math.max(a.y0, c.y0); return ix > 0 && iy > 0 && ix * iy > 0.5 * Math.min((a.x1 - a.x0) * (a.y1 - a.y0), (c.x1 - c.x0) * (c.y1 - c.y0)); });
       if (!dup) keep.push(w);
     });
-    return keep;
+    // 数字に重なって出てくる英字のゴミ（着順の「4」に重なった「st」など）は捨てる
+    return keep.filter(w => {
+      const a = box(w); if (!/^[A-Za-z]{1,3}$/.test(nfkc(a.t))) return true;
+      return !keep.some(k => { if (k === w) return false; const c = box(k); if (!/^\d{1,3}$/.test(nfkc(c.t))) return false; const ix = Math.min(a.x1, c.x1) - Math.max(a.x0, c.x0), iy = Math.min(a.y1, c.y1) - Math.max(a.y0, c.y0); return ix > 0 && iy > 0 && ix * iy > 0.5 * (a.x1 - a.x0) * (a.y1 - a.y0); });
+    });
   }
   function toSegments(words) {
     words = prepWords(words);
@@ -429,8 +433,11 @@
       if (r.finish) return;
       const num = x => x && /^\d+$/.test(x.finish) ? +x.finish : null;
       const p = num(rows[i - 1]), n = num(rows[i + 1]);
-      if (p && n && n - p === 2) r.finish = String(p + 1);
-      else if (p && !rows[i + 1]) r.finish = String(p + 1);
+      // 上の行と同じ着順が続いていれば（同着）、その頭数ぶん先の着順になる
+      let k = 0; while (p && rows[i - 1 - k] && num(rows[i - 1 - k]) === p) k++;
+      const c = /同着/.test(r.margin || "") ? p : p && p + k;
+      if (p && n && (n - c === 1 || n === c && /同着/.test((rows[i + 1] || {}).margin || ""))) r.finish = String(c);
+      else if (p && !rows[i + 1]) r.finish = String(c);
       else if (!rows[i - 1] && n === 2) r.finish = "1";
       if (r.finish) r.finishGuessed = true;
     });
