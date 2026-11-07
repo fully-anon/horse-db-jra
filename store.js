@@ -170,6 +170,7 @@
     try { ids = Object.assign(ids, JSON.parse(localStorage.getItem("horsedb-ids") || "{}")); } catch (e) { /* noop */ }
     const saveIds = () => { try { localStorage.setItem("horsedb-ids", JSON.stringify(ids)); } catch (e) { /* noop */ } };
     const urlCache = new Map();
+    let dirty = {}; // 行を削除したシート：以後の保存は行番号をIDで探し直す
 
     async function api(url, opt = {}) {
       if (!Auth.valid()) throw new AuthError();
@@ -229,6 +230,7 @@
         return true;
       },
       async loadAll() {
+        dirty = {};
         const ranges = ["horses", "races", "entries"].map(t => `ranges=${encodeURIComponent("'" + TABLES[t].sheet + "'!A2:Z")}`).join("&");
         const j = await (await api(SHEETS + ids.sheet + "/values:batchGet?" + ranges)).json();
         const out = {};
@@ -240,6 +242,11 @@
       },
       async save(table, obj) {
         const sheet = TABLES[table].sheet, row = toRow(table, obj);
+        if (dirty[table]) {
+          const col = await (await api(SHEETS + ids.sheet + "/values/" + encodeURIComponent(`'${sheet}'!A2:A`))).json();
+          const i = (col.values || []).findIndex(r => r[0] === obj.id);
+          if (i >= 0) obj._row = i + 2; else delete obj._row;
+        }
         if (obj._row) {
           await api(SHEETS + ids.sheet + "/values/" + encodeURIComponent(`'${sheet}'!A${obj._row}`) + "?valueInputOption=RAW", { method: "PUT", headers: J, body: JSON.stringify({ values: [row] }) });
         } else {
@@ -256,6 +263,7 @@
         const col = await (await api(SHEETS + ids.sheet + "/values/" + encodeURIComponent(`'${sheet}'!A2:A`))).json();
         const rows = []; (col.values || []).forEach((r, i) => { if (want.has(r[0])) rows.push(i + 1); }); // 0始まりの行番号（見出し=0）
         if (!rows.length) return;
+        dirty[table] = true;
         const info = await (await api(SHEETS + ids.sheet + "?fields=sheets.properties")).json();
         const sh = info.sheets.find(s => s.properties.title === sheet); if (!sh) return;
         rows.sort((a, b) => b - a);
