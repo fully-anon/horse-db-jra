@@ -252,17 +252,21 @@
       hdrHalf = d ? d / 2 : hdr.h * 2;
     }
     const rows = [];
+    const gaps = names.slice(1).map((n, i) => n.y0 - names[i].y0).filter(g => g > 0).sort((a, b) => a - b);
+    const rowGap = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0; // ふだんの行の間隔（中央値）
     names.forEach((nm, i) => {
-      // 1頭分の範囲：次の馬名の手前まで（最後の行は馬名の高さの6倍まで。下の払戻しやラップを含めない）
-      const top = nm.y0 - nm.h * 0.5, bottom = Math.min(i + 1 < names.length ? names[i + 1].y0 - names[i + 1].h * 0.5 : h, nm.y0 + nm.h * 6);
+      // 1頭分の範囲：次の馬名の手前まで。最後の行は、ふだんの行の間隔ぶんだけ（下の払戻しやラップを含めない）
+      const top = nm.y0 - nm.h * 0.5, bottom = i + 1 < names.length ? names[i + 1].y0 - names[i + 1].h * 0.5 : Math.min(h, nm.y0 - nm.h * 0.5 + (rowGap || nm.h * 6));
       const band = segs.filter(s => s.cy >= top && s.cy < bottom && s !== nm);
       const time = band.find(s => /\d:\d{2}\.\d/.test(s.t));
+      const tm = time && /(\d{1,2}):(\d{2})\.(\d)/.exec(time.t);
       // 馬体重：「496kg(-6)」（スマホ版）または「478(-2)」（PC版、表の右端）
       const WRE = /(^|[^\d.])(\d{3})\s*(kg)?\s*\(\s*([+\-−]?\d{1,2}|前計不|計不)\s*\)/i;
       const wt = band.find(s => WRE.test(s.t)) || band.find(s => /\d{3}\s*kg/i.test(s.t) && s.x0 < w * 0.6);
       const wtRes = wt && WRE.test(wt.t);
       if (!time && !wtRes) return; // 結果の行ではない（パドック映像のテロップなど）
       const r = { name: (nfkc(nm.t).match(/[ァ-ヺー]{2,}/g) || []).sort((a, b) => b.length - a.length)[0] };
+      if (tm) r.time = (+tm[1]) * 60 + (+tm[2]) + (+tm[3]) / 10; // 走破タイム（秒）
       if (wt) { const m = WRE.exec(wt.t) || /()(\d{3})\s*kg/i.exec(wt.t); if (+m[2] >= 300 && +m[2] <= 700) r.weight = m[2]; }
       // 名前より左の数字：左から 着順・枠・馬番
       const nums = band.filter(s => s.x1 <= nm.x0 + nm.h * 0.3 && /^\d{1,2}$/.test(s.t)).sort((a, b) => a.cx - b.cx);
@@ -316,7 +320,10 @@
       });
     });
     const rows = [...byKey.values()].sort((a, b) => (+a.finish || 99) - (+b.finish || 99) || (+a.umaban || 99) - (+b.umaban || 99));
-    return { race, rows };
+    // 着差＝1着の馬とのタイム差（秒）。1着の走破タイムが読めたときだけ計算する
+    const win = rows.find(x => String(x.finish) === "1" && x.time);
+    rows.forEach(x => { x.diff = win && x.time ? Math.max(0, x.time - win.time).toFixed(1) : ""; x.lengths = x.margin || ""; });
+    return { race, rows, winTime: win ? win.time : null };
   }
 
   // 手入力・貼り付けしたラップを「12.5-10.9-…」の形にそろえる

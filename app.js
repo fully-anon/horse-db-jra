@@ -119,7 +119,7 @@
   }
 
   /* ---------------- ルーティング ---------------- */
-  const routes = { "": viewRaces, races: viewRaces, race: viewRace, horses: viewHorses, horse: viewHorse, new: viewNew, entry: viewEntry, settings: viewSettings };
+  const routes = { "": viewRaces, races: viewRaces, race: viewRace, horses: viewHorses, horse: viewHorse, new: viewNew, import: viewImport, entry: viewEntry, settings: viewSettings };
   function render() {
     if (!ready) return;
     const [, name = "", id = ""] = (location.hash.replace(/^#\/?/, "#/").match(/^#\/([^/]*)\/?(.*)$/) || []);
@@ -205,16 +205,7 @@
         }).join("") : `<tr><td colspan="9" class="empty">出走予定馬を下から追加してください</td></tr>`}</tbody>
       </table></div>
 
-      <section class="card" id="resCard"><div class="cardhead"><h2>結果を画像から読み取る</h2><span class="muted" id="resCount"></span></div>
-        <p class="muted" style="margin:0">レース結果ページのスクリーンショット（上部のレース情報と、結果・着順の一覧）を入れて「読み取る」を押すと、レース条件と、この出馬表の馬の着順・着差・馬体重をまとめて入力します。ラップ（ハロンタイム）の欄が写った画像を加えると、ラップも入ります。一覧が長いときは、スクロールして複数枚に分けて入れてください。</p>
-        <div class="resthumbs" id="resThumbs"></div>
-        <div class="row">
-          <label class="btn filebtn">画像を選ぶ<input type="file" accept="image/*" multiple id="resFile"></label>
-          <button class="btn" id="resPaste">コピーした画像を貼り付け</button>
-          <button class="btn primary" id="resRead" disabled>読み取る</button>
-        </div>
-        <div id="resOut"></div>
-      </section>
+      <section class="card" id="resCard"></section>
 
       <section class="card"><h2>出走予定馬を追加</h2>
         <div class="row add">
@@ -307,144 +298,8 @@
     });
     drawPick();
 
-    // ---- 結果画像の読み取り ----
-    const resImgs = []; // {blob, w, h, url}
-    const drawRes = () => {
-      $("#resThumbs").innerHTML = resImgs.map((im, i) => `<div class="rt"><img src="${im.url}" alt="結果画像${i + 1}"><button class="rtx" data-rdel="${i}" aria-label="${i + 1}枚目を外す">×</button></div>`).join("");
-      $("#resCount").textContent = resImgs.length ? resImgs.length + "枚" : "";
-      $("#resRead").disabled = !resImgs.length;
-    };
-    async function addResImage(f) {
-      if (resImgs.length >= 6) { toast("一度に読み取れるのは6枚までです"); return; }
-      try { const s = await shrinkImage(f, 2400); resImgs.push({ blob: s.blob, w: s.width, h: s.height, url: URL.createObjectURL(s.blob) }); drawRes(); }
-      catch (err) { toast("この画像は読み込めませんでした。JPEGかPNGで試してください"); }
-    }
-    $("#resFile").addEventListener("change", async ev => { const fs = [...(ev.target.files || [])]; ev.target.value = ""; for (const f of fs) await addResImage(f); });
-    $("#resPaste").onclick = async () => {
-      const f = await readClipboardImage();
-      if (f instanceof Blob) addResImage(f);
-      else if (f === "noimage") toast("クリップボードに画像がありません。スクリーンショットをコピーしてから押してください");
-      else toast("貼り付けできませんでした。PCでは Ctrl＋V（Macは ⌘＋V）で貼り付けてください");
-    };
-    onPaste = ev => { const f = imageFromPasteEvent(ev); if (!f) return; ev.preventDefault(); addResImage(f); $("#resCard").scrollIntoView({ block: "nearest" }); };
-    $("#resThumbs").addEventListener("click", ev => { const b = ev.target.closest("[data-rdel]"); if (!b) return; const i = +b.dataset.rdel; URL.revokeObjectURL(resImgs[i].url); resImgs.splice(i, 1); drawRes(); });
-    $("#resRead").onclick = ev => run(ev.target, async () => {
-      ev.target.textContent = "読み取り中…";
-      const got = [];
-      for (const im of resImgs) {
-        const o = await B.ocr(im.blob);
-        if (o.error) {
-          const why = { nokey: "Vision APIのAPIキーが未設定です。設定画面で入力してください", offline: "通信できません", network: "読み取りの通信に失敗しました", http403: "APIキーが使えませんでした。キーの制限設定を確認してください", http429: "本日の読み取り上限に達しました" }[o.error] || "読み取りに失敗しました（" + o.error + "）";
-          showError(why); return;
-        }
-        got.push({ words: o.words, w: im.w, h: im.h });
-      }
-      lastOCR = got.map(g => ({ w: g.w, h: g.h, words: (g.words || []).map(x => { const v = (x.boundingPoly && x.boundingPoly.vertices) || []; const xs = v.map(p => p.x || 0), ys = v.map(p => p.y || 0); return [x.description, Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; }) }));
-      showResultConfirm(parseResultImages(got));
-    });
-    let lastOCR = null; // 調整用：Vision が返した文字と位置
-    const RF = [["date", "日付"], ["venue", "開催場"], ["raceNo", "レース番号"], ["raceName", "レース名"], ["cls", "クラス"], ["surface", "芝／ダート"], ["distance", "距離（m）"], ["going", "馬場状態"], ["lap", "ラップ"]];
-    function showResultConfirm(res) {
-      const rr = res.race, rows = res.rows;
-      const twin = !r.date && rr.date ? findRace(rr.date, rr.venue || r.venue, rr.raceNo || r.raceNo) : null; // 同じレースの出馬表がすでにある
-      const pool = ents.concat(twin ? entriesOfRace(twin.id).filter(x => !ents.some(y => y.horseId === x.horseId)) : []);
-      // 出馬表の馬と結果の行を対応づける：馬名が一致 → 馬番が一致して名前が1文字違い まで
-      const used = new Set();
-      const match = pool.map(en => {
-        const h = horse(en.horseId) || {}, n = normName(h.name);
-        let row = rows.find(x => !used.has(x) && normName(x.name) === n);
-        if (!row) row = rows.find(x => !used.has(x) && x.umaban && String(x.umaban) === String(en.umaban) && matchHorse(x.name, [h]).candidates.length);
-        if (!row) row = rows.find(x => !used.has(x) && matchHorse(x.name, [h]).candidates.length);
-        if (row) used.add(row);
-        return { en, h, row };
-      });
-      const extra = rows.filter(x => !used.has(x));
-      const anyRace = RF.some(([k]) => rr[k]) || !!rr.dateOptions;
-      const input = (k, v, id) => {
-        if (k === "cls") return `<select id="${id}">${opts(CLASSES, v)}</select>`;
-        if (k === "surface") return `<select id="${id}">${opts(SURFACES, v)}</select>`;
-        if (k === "going") return `<select id="${id}">${opts(GOINGS, v)}</select>`;
-        if (k === "date") return `<input type="date" id="${id}" value="${esc(v)}">`;
-        if (k === "lap") return `<input type="text" id="${id}" value="${esc(v)}" class="lapin">`;
-        return `<input type="${k === "raceNo" || k === "distance" ? "number" : "text"}" id="${id}" value="${esc(v)}">`;
-      };
-      $("#resOut").innerHTML = `
-        ${!anyRace && !rows.length ? banner("画像から結果を読み取れませんでした。結果ページのスクリーンショットか確認してください") : ""}
-        ${anyRace ? `<h3 class="sub3">レース条件</h3><div class="tablewrap"><table class="card-table rc"><thead><tr><th>反映</th><th>項目</th><th>いまの値</th><th>読み取った値（直せます）</th></tr></thead><tbody>
-          ${!rr.date && rr.dateOptions ? `<tr><td><input type="checkbox" class="ck" data-rk="date" id="dateCk"></td><td>日付</td><td class="${r.date ? "" : "muted"}">${esc(r.date || "未入力")}</td>
-            <td><select id="rv_date"><option value="">日付のタブが複数写っています。選んでください</option>${rr.dateOptions.map(d => `<option ${d === r.date ? "selected" : ""}>${esc(d)}</option>`).join("")}</select></td></tr>` : ""}
-          ${RF.map(([k, l]) => { const cur = r[k] || "", nv = rr[k] || ""; if (!nv) return ""; const same = String(cur) === String(nv);
-            return `<tr><td><input type="checkbox" class="ck" data-rk="${k}" ${same ? "" : "checked"}></td><td>${l}</td><td class="${cur ? "" : "muted"}">${esc(cur || "未入力")}</td><td>${input(k, nv, "rv_" + k)}</td></tr>`; }).join("")}
-          </tbody></table></div>` : ""}
-        ${twin ? `<p class="ok">このレースは登録済みの <b>${esc(raceTitle(twin))}</b> と同じレースです。反映すると、そちらにまとめます。</p>` : ""}
-        ${rows.length ? `<h3 class="sub3">この出馬表の馬（${match.filter(m => m.row).length}/${pool.length}頭を照合）</h3>
-          <div class="tablewrap"><table class="card-table rc"><thead><tr><th>反映</th><th>馬番</th><th>馬名</th><th>着順</th><th>着差</th><th>馬体重</th><th>性別</th></tr></thead><tbody>
-          ${match.map((m, i) => !m.row ? `<tr><td></td><td class="n">${esc(m.en.umaban)}</td><td><b>${esc(m.h.name)}</b></td><td colspan="4" class="muted">結果の画像に見つかりません</td></tr>` : `
-            <tr><td><input type="checkbox" class="ck" data-ri="${i}" checked></td>
-              <td><input type="number" class="sm" id="ru_${i}" value="${esc(m.row.umaban || m.en.umaban)}"></td>
-              <td><b>${esc(m.h.name)}</b>${normName(m.row.name) !== normName(m.h.name) ? `<br><span class="muted">読み取り：${esc(m.row.name)}</span>` : ""}</td>
-              <td><input type="text" class="sm" id="rf_${i}" value="${esc(m.row.finish || "")}"></td>
-              <td><input type="text" class="sm" id="rm_${i}" value="${esc(m.row.margin || "")}" placeholder="${+m.row.finish === 1 ? "（1着）" : ""}"></td>
-              <td><input type="number" class="sm" id="rw_${i}" value="${esc(m.row.weight || m.en.weight || "")}"></td>
-              <td>${m.h.sex ? esc(m.h.sex) : `<select id="rs_${i}">${opts(SEXES, m.row.sex || "")}</select>`}</td></tr>`).join("")}
-          </tbody></table></div>
-          ${extra.length ? `<p class="muted">出馬表にいない馬（${extra.length}頭）は取り込みません：${extra.map(x => esc(x.name)).join("、")}</p>` : ""}` : ""}
-        ${anyRace || match.some(m => m.row) ? `<div class="row"><button class="btn primary" id="resApply">チェックした内容を反映</button><button class="btn" id="resCancel">やめる</button></div>
-          <p class="muted">結果区分（好走／凡走／大敗）は、各馬の出走記録で選んでください。</p>` : ""}`;
-      $("#resOut").scrollIntoView({ block: "start", behavior: "smooth" });
-      if ($("#resCancel")) $("#resCancel").onclick = () => { $("#resOut").innerHTML = ""; };
-      if ($("#dateCk")) $("#rv_date").addEventListener("change", () => { $("#dateCk").checked = !!$("#rv_date").value; });
-      $("#resOut").insertAdjacentHTML("beforeend", `<details class="dbg"><summary>読み取りがうまくいかないとき</summary>
-        <p class="muted">下のボタンで、文字認識の結果（文字と位置）をコピーできます。Claude とのチャットに貼り付けてもらえれば、読み取りのルールを調整できます。画像そのものや Google の情報は含まれません。</p>
-        <div class="row"><button class="btn small" id="dbgCopy">読み取りの詳細をコピー</button></div><textarea id="dbgText" class="mono" rows="4" hidden readonly></textarea></details>`);
-      $("#dbgCopy").onclick = () => {
-        const text = "競走馬DB 読み取りの詳細 v1\n" + JSON.stringify(lastOCR);
-        const fb = () => { const ta = $("#dbgText"); ta.hidden = false; ta.value = text; ta.focus(); ta.select(); toast("自動でコピーできませんでした。表示された文字をすべて選んでコピーしてください"); };
-        try { navigator.clipboard.writeText(text).then(() => toast("読み取りの詳細をコピーしました"), fb); } catch (e) { fb(); }
-      };
-      if ($("#resApply")) $("#resApply").onclick = ev2 => run(ev2.target, async () => {
-        const nr = {};
-        document.querySelectorAll("#resOut [data-rk]:checked").forEach(c => { const k = c.dataset.rk; nr[k] = ($("#rv_" + k).value || "").trim(); });
-        if ("raceNo" in nr && nr.raceNo) nr.raceNo = String(+nr.raceNo);
-        if ("lap" in nr) nr.lap = normLap(nr.lap);
-        const f = Object.assign({}, r, nr);
-        if ("date" in nr && !nr.date) { delete nr.date; f.date = r.date; } // 日付を選ばなかったときは変えない
-        if (!f.date && !(f.venue && f.raceNo)) { showError("日付が空です"); return; }
-        const dup = f.venue && f.raceNo && findRace(f.date, f.venue, f.raceNo);
-        if (dup && dup.id !== r.id && r.date) { showError(`${raceTitle(dup)} がすでに別のレースとして登録されています。日付・開催場・レース番号のチェックを外すか、値を確認してください`); return; }
-        const picked = [...document.querySelectorAll("#resOut [data-ri]:checked")].map(c => +c.dataset.ri);
-        const nums = picked.map(i => $("#ru_" + i).value.trim()).filter(Boolean);
-        if (new Set(nums).size !== nums.length) { showError("同じ馬番が2頭に入っています。馬番を確認してください"); return; }
-        let target = r;
-        if (dup && dup.id !== r.id) {
-          // 日付なしで登録していたレースを、すでにある同じレース（出馬表など）にまとめる
-          target = dup;
-          for (const m of match) {
-            if (m.en.raceId === dup.id) continue; // もともと出馬表側の記録
-            const same = D.entries.find(x => x.raceId === dup.id && x.horseId === m.en.horseId);
-            if (same) {
-              ["img1", "img2", "anno1", "anno2", "weight", "umaban", "prediction", "review", "result"].forEach(k => { if (!same[k] && m.en[k]) same[k] = m.en[k]; });
-              await B.remove("entries", [m.en.id]); D.entries = D.entries.filter(x => x.id !== m.en.id); m.en = same;
-            } else m.en.raceId = dup.id;
-          }
-          for (const en of D.entries.filter(x => x.raceId === r.id)) { en.raceId = dup.id; await save("entries", en); }
-          delete nr.date; delete nr.venue; delete nr.raceNo;
-          await B.remove("races", [r.id]); D.races = D.races.filter(x => x.id !== r.id);
-        }
-        if (Object.keys(nr).length) await save("races", Object.assign(target, nr));
-        let n = 0;
-        for (const i of picked) {
-          const m = match[i];
-          Object.assign(m.en, { umaban: $("#ru_" + i).value ? String(+$("#ru_" + i).value) : m.en.umaban, finish: $("#rf_" + i).value.trim(), margin: $("#rm_" + i).value.trim(), weight: $("#rw_" + i).value.trim() || m.en.weight });
-          await save("entries", m.en); n++;
-          const sx = $("#rs_" + i); if (sx && sx.value && !m.h.sex) await save("horses", Object.assign(m.h, { sex: sx.value }));
-        }
-        for (const m of match) if (m.en.raceId !== r.id && !picked.includes(match.indexOf(m))) await save("entries", m.en);
-        resImgs.forEach(im => URL.revokeObjectURL(im.url));
-        if (target !== r) { await reloadData(); toast(`同じレース（${raceTitle(target)}）にまとめて反映しました`); go("#/race/" + target.id); return; }
-        toast(`反映しました（レース条件${Object.keys(nr).length}項目・${n}頭の結果）`); render();
-      });
-    }
+    // ---- 結果のスクリーンショットから読み取り（共通の処理） ----
+    mountImporter($("#resCard"), r);
 
     // 馬番の編集：入力欄を変えると保存し、馬番順に並べ直す
     document.querySelectorAll("[data-umaban]").forEach(inp => {
@@ -472,6 +327,194 @@
       await save("races", Object.assign(r, { analysis: JSON.stringify(res.data), analyzedAt: nowStr() }));
       toast("分析結果を反映しました" + (res.warn ? "（" + res.warn + "）" : "")); render();
     });
+  }
+
+  /* ================= 結果のスクリーンショットから登録 ================= */
+  // 読み取る項目：年月日・開催場・レース名・クラス・芝ダート・距離・馬場状態・ラップ、各馬の馬番・馬名・着順・着差（1着とのタイム差）
+  const RES_FIELDS = [["date", "日付"], ["venue", "開催場"], ["raceNo", "レース番号"], ["raceName", "レース名"], ["cls", "クラス"], ["surface", "芝／ダート"], ["distance", "距離（m）"], ["going", "馬場状態"], ["lap", "ラップ"]];
+  const OCR_ERR = { nokey: "Vision APIのAPIキーが未設定です。設定画面で入力してください", offline: "通信できません", network: "読み取りの通信に失敗しました", http403: "APIキーが使えませんでした。キーの制限設定を確認してください", http429: "本日の読み取り上限に達しました" };
+  const blankEntry = (hid, rid) => ({ id: newId("E"), horseId: hid, raceId: rid, umaban: "", img1: "", img2: "", anno1: "", anno2: "", finish: "", margin: "", weight: "", result: "", prediction: "", review: "" });
+
+  // 日付なしで登録したレースを、同じ日付つきのレースへまとめる（同じ馬の記録は1つに）
+  async function mergeRaceInto(src, dst) {
+    for (const en of D.entries.filter(x => x.raceId === src.id)) {
+      const same = D.entries.find(x => x.raceId === dst.id && x.horseId === en.horseId);
+      if (same) {
+        ["img1", "img2", "anno1", "anno2", "weight", "umaban", "prediction", "review", "result", "finish", "margin"].forEach(k => { if (!same[k] && en[k]) same[k] = en[k]; });
+        await save("entries", same); await B.remove("entries", [en.id]); D.entries = D.entries.filter(x => x.id !== en.id);
+      } else { en.raceId = dst.id; await save("entries", en); }
+    }
+    RES_FIELDS.forEach(([k]) => { if (!dst[k] && src[k]) dst[k] = src[k]; });
+    await B.remove("races", [src.id]); D.races = D.races.filter(x => x.id !== src.id);
+  }
+
+  function mountImporter(box, fixedRace) {
+    box.innerHTML = `<div class="cardhead"><h2>結果を画像から読み取る</h2><span class="muted" id="resCount"></span></div>
+      <p class="muted" style="margin:0">netkeiba などの結果ページのスクリーンショットを入れて「読み取る」を押すと、レース情報（日付・開催場・レース名・クラス・芝ダート・距離・馬場状態・ラップ）と、全馬の馬番・馬名・着順・着差（1着とのタイム差）を読み取ります。結果に載っている馬はすべて登録され、登録済みの馬にはこのレースが出走履歴として追加されます。</p>
+      <p class="muted" style="margin:0">読み取りの精度を上げるには、文字が小さくならないように撮ってください（PCはブラウザを150〜200%に拡大）。一覧が長いときは、スクロールして複数枚に分けて入れてください。</p>
+      <div class="resthumbs" id="resThumbs"></div>
+      <div class="row">
+        <label class="btn filebtn">画像を選ぶ<input type="file" accept="image/*" multiple id="resFile"></label>
+        <button class="btn" id="resPaste">コピーした画像を貼り付け</button>
+        <button class="btn primary" id="resRead" disabled>読み取る</button>
+      </div>
+      <div id="resOut"></div>`;
+    const imgs = []; let lastOCR = null;
+    const drawThumbs = () => {
+      $("#resThumbs").innerHTML = imgs.map((im, i) => `<div class="rt"><img src="${im.url}" alt="結果画像${i + 1}"><button class="rtx" data-rdel="${i}" aria-label="${i + 1}枚目を外す">×</button></div>`).join("");
+      $("#resCount").textContent = imgs.length ? imgs.length + "枚" : "";
+      $("#resRead").disabled = !imgs.length;
+    };
+    async function addImage(f) {
+      if (imgs.length >= 6) { toast("一度に読み取れるのは6枚までです"); return; }
+      try { const s = await shrinkImage(f, 2400); imgs.push({ blob: s.blob, w: s.width, h: s.height, url: URL.createObjectURL(s.blob) }); drawThumbs(); }
+      catch (err) { toast("この画像は読み込めませんでした。JPEGかPNGで試してください"); }
+    }
+    $("#resFile").addEventListener("change", async ev => { const fs = [...(ev.target.files || [])]; ev.target.value = ""; for (const f of fs) await addImage(f); });
+    $("#resPaste").onclick = async () => {
+      const f = await readClipboardImage();
+      if (f instanceof Blob) addImage(f);
+      else if (f === "noimage") toast("クリップボードに画像がありません。スクリーンショットをコピーしてから押してください");
+      else toast("貼り付けできませんでした。PCでは Ctrl＋V（Macは ⌘＋V）で貼り付けてください");
+    };
+    onPaste = ev => { const f = imageFromPasteEvent(ev); if (!f) return; ev.preventDefault(); addImage(f); box.scrollIntoView({ block: "nearest" }); };
+    $("#resThumbs").addEventListener("click", ev => { const b = ev.target.closest("[data-rdel]"); if (!b) return; const i = +b.dataset.rdel; URL.revokeObjectURL(imgs[i].url); imgs.splice(i, 1); drawThumbs(); });
+    $("#resRead").onclick = ev => run(ev.target, async () => {
+      ev.target.textContent = "読み取り中…";
+      const got = [];
+      for (const im of imgs) {
+        const o = await B.ocr(im.blob);
+        if (o.error) { showError(OCR_ERR[o.error] || "読み取りに失敗しました（" + o.error + "）"); return; }
+        got.push({ words: o.words, w: im.w, h: im.h });
+      }
+      lastOCR = got.map(g => ({ w: g.w, h: g.h, words: (g.words || []).map(x => { const v = (x.boundingPoly && x.boundingPoly.vertices) || []; const xs = v.map(p => p.x || 0), ys = v.map(p => p.y || 0); return [x.description, Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; }) }));
+      showConfirm(parseResultImages(got));
+    });
+
+    function showConfirm(res) {
+      const rr = res.race, rows = res.rows;
+      const base = fixedRace || {};
+      const val = k => rr[k] || base[k] || "";
+      const fieldInput = (k) => {
+        const v = val(k), id = "iv_" + k;
+        if (k === "date" && !rr.date && rr.dateOptions) return `<select id="${id}"><option value="">日付のタブが複数写っています。選んでください</option>${rr.dateOptions.map(d => `<option ${d === base.date ? "selected" : ""}>${esc(d)}</option>`).join("")}</select>`;
+        if (k === "date") return `<input type="date" id="${id}" value="${esc(v)}">`;
+        if (k === "venue") return `<input type="text" id="${id}" list="venues" value="${esc(v)}">`;
+        if (k === "cls") return `<select id="${id}">${opts(CLASSES, v)}</select>`;
+        if (k === "surface") return `<select id="${id}">${opts(SURFACES, v)}</select>`;
+        if (k === "going") return `<select id="${id}">${opts(GOINGS, v)}</select>`;
+        if (k === "raceNo" || k === "distance") return `<input type="number" inputmode="numeric" id="${id}" value="${esc(v)}">`;
+        return `<input type="text" id="${id}" value="${esc(v)}" ${k === "lap" ? 'class="lapin" inputmode="decimal"' : ""}>`;
+      };
+      const read = k => rr[k] ? "" : `<span class="miss">読み取れず</span>`;
+      $("#resOut").innerHTML = `
+        ${!rows.length && !RES_FIELDS.some(([k]) => rr[k]) ? banner("画像から結果を読み取れませんでした。結果ページのスクリーンショットか、文字が小さすぎないかを確認してください") : ""}
+        <h3 class="sub3">レース情報</h3>
+        <div class="grid form rf">${RES_FIELDS.map(([k, l]) => `<label class="${k === "lap" || k === "raceName" ? "span2" : ""}">${l} ${k === "date" && rr.dateOptions && !rr.date ? `<span class="miss">選んでください</span>` : read(k)}${fieldInput(k)}</label>`).join("")}</div>
+        <div id="iTarget"></div>
+        ${rows.length ? `<h3 class="sub3">結果（${rows.length}頭）</h3>
+          ${!res.winTime ? banner("1着の馬の走破タイムが読み取れなかったため、着差（1着とのタイム差）を計算できませんでした。1着の行が写った画像を加えるか、手で入力してください。") : ""}
+          <div class="tablewrap"><table class="card-table rc"><thead><tr><th><input type="checkbox" class="ck" id="ckAll" checked aria-label="すべて選ぶ"></th><th>着順</th><th>馬番</th><th>馬名（直せます）</th><th>着差（秒）</th><th>登録</th></tr></thead><tbody>
+          ${rows.map((x, i) => `<tr data-row="${i}"><td><input type="checkbox" class="ck" data-ri="${i}" checked></td>
+            <td><input type="text" class="sm xs" id="if_${i}" value="${esc(x.finish || "")}"></td>
+            <td><input type="number" class="sm xs" id="iu_${i}" value="${esc(x.umaban || "")}"></td>
+            <td><input type="text" class="nm" id="in_${i}" value="${esc(x.name || "")}"></td>
+            <td><input type="text" class="sm xs" id="id_${i}" value="${esc(x.diff || "")}" inputmode="decimal"></td>
+            <td id="is_${i}"></td></tr>`).join("")}
+          </tbody></table></div>` : ""}
+        ${rows.length || RES_FIELDS.some(([k]) => rr[k]) ? `<div class="row"><button class="btn primary" id="resApply">登録する</button><button class="btn" id="resCancel">やめる</button></div>
+          <p class="muted">結果区分（好走／凡走／大敗）は、各馬の出走記録で選んでください。</p>` : ""}
+        <details class="dbg"><summary>読み取りがうまくいかないとき</summary>
+          <p class="muted">下のボタンで、文字認識の結果（文字と位置）をコピーできます。Claude とのチャットに貼り付けてもらえれば、読み取りのルールを調整できます。画像そのものや Google の情報は含まれません。</p>
+          <div class="row"><button class="btn small" id="dbgCopy">読み取りの詳細をコピー</button></div><textarea id="dbgText" class="mono" rows="4" hidden readonly></textarea></details>`;
+
+      const form = () => { const f = {}; RES_FIELDS.forEach(([k]) => { const el = $("#iv_" + k); f[k] = el ? String(el.value || "").trim() : ""; }); if (f.raceNo) f.raceNo = String(+f.raceNo); f.lap = normLap(f.lap); return f; };
+      // 反映先のレース：日付・開催場・レース番号で探す。日付なしで先に登録したレース（パドック登録）も拾う
+      const findTarget = f => {
+        if (fixedRace) {
+          const twin = !fixedRace.date && f.date && f.venue && f.raceNo ? findRace(f.date, f.venue, f.raceNo) : null;
+          return { race: twin && twin.id !== fixedRace.id ? twin : fixedRace, merge: twin && twin.id !== fixedRace.id ? fixedRace : null };
+        }
+        if (f.venue && f.raceNo) {
+          const dated = f.date ? findRace(f.date, f.venue, f.raceNo) : null;
+          const nodate = recentNoDate(f.venue, f.raceNo);
+          if (dated && nodate) return { race: dated, merge: nodate };
+          if (dated || nodate) return { race: dated || nodate, merge: null };
+        }
+        return { race: null, merge: null };
+      };
+      const statusOf = (i) => {
+        const name = ($("#in_" + i).value || "").trim(); const cell = $("#is_" + i);
+        if (!name) { cell.innerHTML = `<span class="miss">馬名を入力</span>`; return; }
+        const t = findTarget(form()).race;
+        const m = matchHorse(name, D.horses);
+        if (m.exact) { const has = t && D.entries.some(e => e.raceId === t.id && e.horseId === m.exact.id); cell.innerHTML = `<span class="ok">登録済み</span>${has ? '<span class="muted">・記録を更新</span>' : '<span class="muted">・出走を追加</span>'}`; return; }
+        if (m.candidates.length) { cell.innerHTML = `<select id="ic_${i}" aria-label="${esc(name)}は登録済みのどの馬か">${m.candidates.map(h => `<option value="${esc(h.id)}">${esc(h.name)}（登録済み）</option>`).join("")}<option value="">新しい馬として登録</option></select><span class="muted cand-note">名前が似た馬がいます</span>`; return; }
+        cell.innerHTML = `<span class="pill">新規登録</span>`;
+      };
+      const drawTarget = () => {
+        const f = form(), t = findTarget(f);
+        $("#iTarget").innerHTML = t.race ? `<p class="ok">登録済みのレース <b>${esc(raceTitle(t.race))}</b> に反映します${t.merge ? `（日付なしで登録していた ${esc(raceTitle(t.merge))} もまとめます）` : !t.race.date && f.date ? "（日付などのレース情報を書き込みます）" : ""}</p>`
+          : (f.date || (f.venue && f.raceNo)) ? `<p class="muted">新しいレースとして登録します</p>` : banner("日付、または開催場とレース番号を入力してください");
+        rows.forEach((x, i) => statusOf(i));
+      };
+      RES_FIELDS.forEach(([k]) => { const el = $("#iv_" + k); if (el) el.addEventListener(el.tagName === "SELECT" ? "change" : "input", drawTarget); });
+      rows.forEach((x, i) => $("#in_" + i).addEventListener("input", () => statusOf(i)));
+      if ($("#ckAll")) $("#ckAll").onchange = e => document.querySelectorAll("#resOut [data-ri]").forEach(c => { c.checked = e.target.checked; });
+      drawTarget();
+      $("#resOut").scrollIntoView({ block: "start", behavior: "smooth" });
+      if ($("#resCancel")) $("#resCancel").onclick = () => { $("#resOut").innerHTML = ""; };
+      $("#dbgCopy").onclick = () => {
+        const text = "競走馬DB 読み取りの詳細 v1\n" + JSON.stringify(lastOCR);
+        const fb = () => { const ta = $("#dbgText"); ta.hidden = false; ta.value = text; ta.focus(); ta.select(); toast("自動でコピーできませんでした。表示された文字をすべて選んでコピーしてください"); };
+        try { navigator.clipboard.writeText(text).then(() => toast("読み取りの詳細をコピーしました"), fb); } catch (e) { fb(); }
+      };
+      if (!$("#resApply")) return;
+      $("#resApply").onclick = ev => run(ev.target, async () => {
+        const f = form();
+        if (!f.date && !(f.venue && f.raceNo)) { showError("日付、または開催場とレース番号を入力してください"); return; }
+        const picked = [...document.querySelectorAll("#resOut [data-ri]:checked")].map(c => +c.dataset.ri);
+        const nums = picked.map(i => $("#iu_" + i).value.trim()).filter(Boolean);
+        if (new Set(nums).size !== nums.length) { showError("同じ馬番が2頭に入っています。馬番を確認してください"); return; }
+        if (picked.some(i => !$("#in_" + i).value.trim())) { showError("馬名が空の行があります。入力するか、チェックを外してください"); return; }
+        // レース
+        let { race: target, merge } = findTarget(f);
+        if (target && f.date && f.venue && f.raceNo) { const other = findRace(f.date, f.venue, f.raceNo); if (other && other.id !== target.id && !merge) { showError(`${raceTitle(other)} がすでに別のレースとして登録されています`); return; } }
+        if (!target) target = await save("races", Object.assign({ id: newId("R"), analysis: "", analyzedAt: "" }, f));
+        else {
+          if (merge) await mergeRaceInto(merge, target);
+          RES_FIELDS.forEach(([k]) => { if (f[k]) target[k] = f[k]; });
+          await save("races", target);
+        }
+        // 馬と出走記録
+        let created = 0, added = 0, updated = 0;
+        for (const i of picked) {
+          const x = rows[i], name = $("#in_" + i).value.trim();
+          const m = matchHorse(name, D.horses); const sel = $("#ic_" + i);
+          let hid = m.exact ? m.exact.id : (sel && sel.value) || "";
+          if (hid && !m.exact) await B.log({ at: nowStr(), kind: "結果取込", input: name, decision: "候補から選択", horseId: hid, horseName: horse(hid).name });
+          if (!hid) {
+            const h = await save("horses", { id: newId("H"), name: normName(name), sex: x.sex || "", styles: "", body: "" }); hid = h.id; created++;
+            await B.log({ at: nowStr(), kind: "結果取込", input: name, decision: "新規登録", horseId: h.id, horseName: h.name });
+          } else { const h = horse(hid); if (h && !h.sex && x.sex) await save("horses", Object.assign(h, { sex: x.sex })); }
+          let en = D.entries.find(e => e.raceId === target.id && e.horseId === hid);
+          if (en) updated++; else { en = blankEntry(hid, target.id); added++; }
+          const u = $("#iu_" + i).value.trim();
+          Object.assign(en, { umaban: u ? String(+u) : en.umaban, finish: $("#if_" + i).value.trim(), margin: $("#id_" + i).value.trim(), weight: en.weight || x.weight || "" });
+          await save("entries", en);
+        }
+        imgs.forEach(im => URL.revokeObjectURL(im.url));
+        await reloadData();
+        toast(`${raceTitle(target)} に登録しました（新しい馬 ${created}頭・出走を追加 ${added}頭・更新 ${updated}頭）`);
+        go("#/race/" + target.id);
+      });
+    }
+  }
+
+  function viewImport() {
+    main().innerHTML = `<div class="head"><div><p class="eyebrow">結果取込</p><h1>結果のスクリーンショットから登録</h1></div></div>
+      <section class="card" id="resCard"></section>`;
+    mountImporter($("#resCard"), null);
   }
 
   function analysisPrompt(r, ents) {
@@ -755,7 +798,7 @@ ${JSON.stringify(data, null, 1)}`;
       <div class="two">
         <section class="card"><h2>結果</h2><div class="grid form">
           <label>着順<input type="number" inputmode="numeric" id="efinish" data-f="efinish" value="${esc(e.finish)}"></label>
-          <label>着差<input type="text" id="emargin" data-f="emargin" value="${esc(e.margin)}" placeholder="クビ、1/2、0.3 など"></label>
+          <label>着差（1着とのタイム差・秒）<input type="text" id="emargin" data-f="emargin" value="${esc(e.margin)}" placeholder="0.3" inputmode="decimal"></label>
           <label>馬体重（kg）<input type="number" inputmode="numeric" id="eweight" data-f="eweight" value="${esc(e.weight)}"></label>
           <label>結果区分<select id="eresult" data-f="eresult">${opts(RESULTS, e.result)}</select></label>
           <label>馬番<input type="number" inputmode="numeric" id="eumaban" data-f="eumaban" value="${esc(e.umaban)}"></label>
@@ -892,7 +935,7 @@ ${JSON.stringify(data, null, 1)}`;
 
   /* ================= 起動 ================= */
   // 新しい版が公開されていたら1回だけ自動で読み込み直す（古いファイルが残る対策）
-  const APP_VERSION = "10";
+  const APP_VERSION = "11";
   async function checkUpdate() {
     if (!/github\.io$/.test(location.hostname)) return false;
     try {
