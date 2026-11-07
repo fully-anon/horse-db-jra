@@ -308,6 +308,8 @@
     const ms2 = marks.length === ns.length ? marks : null;
     return formatLap(ns.map((v, j) => ({ m: ms2 ? ms2[j] : null, t: v.toFixed(1) })));
   }
+  // 表の見出しや着差の言葉は馬名にしない。見出しは「言葉全体」が一致したときだけ（「タイムレスキス」を「タイム」と間違えない）
+  const HEADER_WORD = /^(タイム|オッズ|単勝オッズ|馬名|ラップ|ラップタイム|ハロン|ハロンタイム|ペース|レース|レース映像|データ|データ分析|ワイド|マイ|トリプル|ハナ|アタマ|クビ|ゴール|コース|プロ|オープン|ハンデ)$|^コーナー/;
   const MARGIN = /^(ハナ|アタマ|クビ|大差|大|同着|\d{1,2}|\d\/\d|\d\.\d\/\d|\d+\.\d\/\d)$/;
   // 結果・着順の一覧（1行＝1頭）
   // mode: "result"（結果・着順）または "card"（出馬表：着順・タイムがない）
@@ -325,7 +327,7 @@
   function parseResultRows(segs, w, h, mode = "result") {
     segs = splitTallNumbers(segs);
     // 馬名：左側のカタカナ。同じ行にカタカナの騎手名（ルメールなど）があっても、いちばん左だけを馬名とする
-    const cand = segs.filter(s => s.x0 < w * 0.45 && /[ァ-ヺー]{2,}/.test(s.t) && !/kg|人気|倍/.test(s.t) && !/^(タイム|オッズ|馬名|ラップ|ハロン|コーナー|ペース|レース|データ|ワイド|ワイ|トリプル|マイ)/.test(s.t))
+    const cand = segs.filter(s => s.x0 < w * 0.45 && /[ァ-ヺー]{2,}/.test(s.t) && !/kg|人気|倍/.test(s.t) && !HEADER_WORD.test(s.t))
       .sort((a, b) => a.x0 - b.x0);
     const names = [];
     cand.forEach(s => { if (!names.some(n => Math.abs(n.cy - s.cy) < Math.max(n.h, s.h) * 0.6)) names.push(s); });
@@ -421,6 +423,16 @@
       const sx = sexSeg;
       if (sx) r.sex = { "牡": "牡", "牝": "牝", "セ": "セン", "騸": "セン" }[sx.t[0]];
       rows.push(r);
+    });
+    // 着順が読めなかった行：表は着順の順に並んでいるので、上下の行から埋める
+    if (mode !== "card") rows.forEach((r, i) => {
+      if (r.finish) return;
+      const num = x => x && /^\d+$/.test(x.finish) ? +x.finish : null;
+      const p = num(rows[i - 1]), n = num(rows[i + 1]);
+      if (p && n && n - p === 2) r.finish = String(p + 1);
+      else if (p && !rows[i + 1]) r.finish = String(p + 1);
+      else if (!rows[i - 1] && n === 2) r.finish = "1";
+      if (r.finish) r.finishGuessed = true;
     });
     return rows;
   }

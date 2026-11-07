@@ -515,7 +515,7 @@
           ${!isCard && !res.winTime ? banner("1着の馬の走破タイムが読み取れなかったため、着差（1着とのタイム差）を計算できませんでした。1着の行が写った画像を加えるか、手で入力してください。") : ""}
           <div class="tablewrap"><table class="card-table rc"><thead><tr><th><input type="checkbox" class="ck" id="ckAll" checked aria-label="すべて選ぶ"></th>${isCard ? "" : "<th>着順</th>"}<th>馬番</th><th>馬名（直せます）</th>${isCard ? "" : "<th>着差（秒）</th>"}<th>登録</th></tr></thead><tbody>
           ${rows.map((x, i) => `<tr data-row="${i}"><td><input type="checkbox" class="ck" data-ri="${i}" checked></td>
-            ${isCard ? "" : `<td><input type="text" class="sm xs" id="if_${i}" value="${esc(x.finish || "")}"></td>`}
+            ${isCard ? "" : `<td><input type="text" class="sm xs${x.finishGuessed ? " guessed" : ""}" id="if_${i}" value="${esc(x.finish || "")}" ${x.finishGuessed ? 'title="読み取れなかったため、上下の行から推定しました"' : ""}>${x.finishGuessed ? '<span class="gnote">推定</span>' : ""}</td>`}
             <td><input type="number" class="sm xs" id="iu_${i}" value="${esc(x.umaban || "")}"></td>
             <td><input type="text" class="nm" id="in_${i}" value="${esc(x.name || "")}"></td>
             ${isCard ? "" : `<td><input type="text" class="sm xs" id="id_${i}" value="${esc(x.diff || "")}" inputmode="decimal"></td>`}
@@ -900,7 +900,7 @@ ${JSON.stringify(data, null, 1)}`;
 
   /* ================= 起動 ================= */
   // 新しい版が公開されていたら1回だけ自動で読み込み直す（古いファイルが残る対策）
-  const APP_VERSION = "20";
+  const APP_VERSION = "21";
   async function checkUpdate() {
     if (!/github\.io$/.test(location.hostname)) return false;
     try {

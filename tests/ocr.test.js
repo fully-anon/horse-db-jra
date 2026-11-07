@@ -52,6 +52,15 @@ for (const f of ["netkeiba-pc-result-1.json", "netkeiba-pc-result-2.json"]) {
   eq(f + " 18頭・馬番1〜18", r.rows.map(x => x.umaban).join(","), Array.from({ length: 18 }, (_, i) => i + 1).join(","));
   eq(f + " 13・14番", r.rows.filter(x => +x.umaban === 13 || +x.umaban === 14).map(x => x.name), ["タイガーロード", "スウィッチインラヴ"]);
 }
+// 結果 4件目：「タイムレスキス」を見出しの「タイム」と間違えていた／2着の「2」が読めていない
+{
+  const f = "netkeiba-pc-result-4-iphone.json", r = P.parseResultImages(fx(f), "result");
+  eq(f + " レース", [r.race.venue, r.race.raceNo, r.race.raceName, r.race.cls, r.race.surface, r.race.distance, r.race.going], ["京都", "12", "3歳以上1勝クラス", "1勝", "芝", "1600", "良"]);
+  eq(f + " 着順/馬番/馬名", r.rows.map(x => x.finish + "/" + x.umaban + "/" + x.name).join(" "),
+    "1/3/ダークマルス 2/1/メイショウトウコウ 3/4/ペイシャシス 4/5/サトノセプター 5/8/エグジスタンス 6/13/ドーギッド 7/2/タイムレスキス 8/12/レインボーステート 9/7/ウォーターデライト 10/6/ルートサーティーン 11/10/ルディシャ 12/9/ミッキーコンドル 13/16/ウインラウダ 14/14/エスティヴァリス 15/15/ニシノイツキムスメ 16/11/マゲバスピード");
+  eq(f + " 2着は推定", r.rows[1].finishGuessed, true);
+  eq(f + " ラップ", r.race.lap, "200m:12.0,400m:10.5,600m:11.0,800m:11.8,1000m:11.9,1200m:11.9,1400m:11.6,1600m:11.6");
+}
 // 名寄せ：読み違い（トミーバローズ）を登録済みの馬の候補に出す
 eq("名寄せ 長音の抜け・濁点", P.matchHorse("トミーバローズ", [{ id: 1, name: "トーミーパローズ" }]).candidates.length, 1);
 eq("名寄せ 別の馬は候補にしない", P.matchHorse("アヴィオン", [{ id: 1, name: "トーミーパローズ" }]).candidates.length, 0);
