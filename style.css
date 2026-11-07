@@ -48,6 +48,8 @@ main{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
 .head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px}
 .eyebrow{margin:0;font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.08em}
 .sub{margin:2px 0 0;color:var(--muted)}
+.lap{margin:4px 0 0;font-family:var(--mono);font-size:14px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.card-table.rc input.lapin{min-width:260px;font-family:var(--mono)}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .row{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}

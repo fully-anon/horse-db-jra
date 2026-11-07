@@ -10,7 +10,7 @@
     races: { sheet: "レース", cols: [
       ["id", "レースID"], ["date", "日付"], ["venue", "開催場"], ["raceNo", "レース番号"], ["raceName", "レース名"],
       ["cls", "クラス"], ["surface", "芝／ダート"], ["distance", "距離"], ["going", "馬場状態"],
-      ["analysis", "分析結果"], ["analyzedAt", "分析日時"]] },
+      ["analysis", "分析結果"], ["analyzedAt", "分析日時"], ["lap", "ラップ"]] },
     entries: { sheet: "出走", cols: [
       ["id", "出走ID"], ["horseId", "馬ID"], ["raceId", "レースID"], ["umaban", "馬番"],
       ["img1", "後肢伸展時画像"], ["img2", "後肢垂直時画像"], ["anno1", "書き込み1"], ["anno2", "書き込み2"],
@@ -212,7 +212,14 @@
         const def = info.sheets.find(s => !Object.values(TABLES).some(t => t.sheet === s.properties.title));
         if (def && info.sheets.length === 1) await api(SHEETS + id + ":batchUpdate", { method: "POST", headers: J, body: JSON.stringify({ requests: [{ deleteSheet: { sheetId: def.properties.sheetId } }] }) });
         await api(SHEETS + id + "/values:batchUpdate", { method: "POST", headers: J, body: JSON.stringify({ valueInputOption: "RAW", data: Object.values(TABLES).map(t => ({ range: `'${t.sheet}'!A1`, values: [t.cols.map(c => c[1])] })) }) });
+        return;
       }
+      // 版が上がって列が増えたときは、既存のシートの見出し行に足りない見出しを書き足す（データは触らない）
+      const ts = Object.values(TABLES);
+      const hd = await (await api(SHEETS + id + "/values:batchGet?" + ts.map(t => "ranges=" + encodeURIComponent(`'${t.sheet}'!1:1`)).join("&"))).json();
+      const fix = [];
+      ts.forEach((t, i) => { const cur = ((hd.valueRanges[i] || {}).values || [[]])[0] || []; if (t.cols.some((c, j) => cur[j] !== c[1])) fix.push({ range: `'${t.sheet}'!A1`, values: [t.cols.map(c => c[1])] }); });
+      if (fix.length) await api(SHEETS + id + "/values:batchUpdate", { method: "POST", headers: J, body: JSON.stringify({ valueInputOption: "RAW", data: fix }) });
     }
 
     const toRow = (table, o) => TABLES[table].cols.map(([k]) => o[k] == null ? "" : String(o[k]));

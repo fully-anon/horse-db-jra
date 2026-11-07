@@ -188,7 +188,29 @@
       const g = after.match(/稍重|不良|稍|不|重|良/g);
       if (g) out.going = { "稍": "稍重", "不": "不良" }[g[g.length - 1]] || g[g.length - 1];
     }
+    // ラップは数字が詰まって「12.311.0」とならないよう、かたまりの間に空白を入れた行で読む
+    const spaced = toLines(segs.map(s => ({ description: s.t + " ", boundingPoly: { vertices: [{ x: s.x0, y: s.y0 }, { x: s.x1, y: s.y1 }] } })))
+      .map(l => ({ text: nfkc(l.text), cy: l.cy })).sort((a, b) => a.cy - b.cy);
+    out.lap = parseLap(spaced);
     return out;
+  }
+  // ラップ：「12.5-10.9-11.3…」の並び。「ハロン」「ラップ」の行を優先し、累計（23.4、35.0…）は除く
+  const LAPNUM = /(^|[^\d.:])(\d{1,2}\.\d)(?![\d倍])/g;
+  function lapNums(s) { const out = []; let m; LAPNUM.lastIndex = 0; while ((m = LAPNUM.exec(s))) out.push(+m[2]); return out; }
+  const isLapSeq = ns => ns.length >= 3 && ns.every(v => v >= 5 && v < 16) && ns.filter(v => v >= 10).length >= ns.length - 1;
+  function parseLap(lines) {
+    const cand = lines.map((l, i) => ({ i, text: l.text, cy: l.cy, ns: /\d:\d{2}\.\d|倍|人気|kg/.test(l.text) ? [] : lapNums(l.text) })).filter(c => isLapSeq(c.ns));
+    if (!cand.length) return "";
+    const labeled = cand.filter(c => /ハロン|ラップ/.test(c.text) && !/累計|ペース/.test(c.text));
+    let best = labeled[0] || cand.sort((a, b) => b.ns.length - a.ns.length)[0];
+    // 長いレースで2行に折り返している場合は、すぐ下の行も続きとしてつなげる
+    let ns = best.ns.slice(), last = best;
+    for (;;) {
+      const next = cand.find(c => c.i > last.i && c.i <= last.i + 2 && !/ハロン|ラップ|累計|ペース/.test(c.text));
+      if (!next || ns.length >= 20) break;
+      ns = ns.concat(next.ns); last = next;
+    }
+    return ns.map(v => v.toFixed(1)).join("-");
   }
   const MARGIN = /^(ハナ|アタマ|クビ|大差|大|同着|\d{1,2}|\d\/\d|\d\.\d\/\d|\d+\.\d\/\d)$/;
   // 結果・着順の一覧（1行＝1頭）
@@ -254,5 +276,8 @@
     return { race, rows };
   }
 
-  window.Paddock = { VENUES, parsePaddock, normName, matchHorse, parseResultImages, inferDate };
+  // 手入力・貼り付けしたラップを「12.5-10.9-…」の形にそろえる
+  function normLap(s) { const ns = lapNums(nfkc(String(s || "")).replace(/[‐－―–—ー]/g, "-")); return ns.map(v => v.toFixed(1)).join("-"); }
+
+  window.Paddock = { VENUES, parsePaddock, normName, matchHorse, parseResultImages, inferDate, normLap };
 })();

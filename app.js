@@ -2,7 +2,7 @@
 (function () {
   "use strict";
   const { Auth, Settings, AuthError, NetError, shrinkImage, newId, nowStr } = window.Store;
-  const { VENUES, parsePaddock, matchHorse, normName, parseResultImages } = window.Paddock;
+  const { VENUES, parsePaddock, matchHorse, normName, parseResultImages, normLap } = window.Paddock;
   const CLASSES = ["新馬", "未勝利", "1勝", "2勝", "3勝", "OP", "L", "G3", "G2", "G1"];
   const SURFACES = ["芝", "ダート"], GOINGS = ["良", "稍重", "重", "不良"], SEXES = ["牡", "牝", "セン"];
   const STYLES = ["逃げ", "先行", "差し", "追込", "自在"], RESULTS = ["好走", "凡走", "大敗"];
@@ -145,9 +145,10 @@
       <label>芝／ダート<select data-f="${idp}surface" id="${idp}surface">${opts(SURFACES, r.surface)}</select></label>
       <label>距離（m）<input type="number" inputmode="numeric" step="100" data-f="${idp}distance" id="${idp}distance" value="${esc(r.distance)}" placeholder="1600"></label>
       <label>馬場状態<select data-f="${idp}going" id="${idp}going">${opts(GOINGS, r.going)}</select></label>
+      <label class="span2">ラップ（200mごと）<input type="text" data-f="${idp}lap" id="${idp}lap" value="${esc(r.lap)}" placeholder="12.5-10.9-11.3-11.6-11.8-12.1-11.9-12.4" inputmode="decimal" autocomplete="off"></label>
     </div>`;
   }
-  const readRaceForm = (idp = "r") => { const v = k => ($("#" + idp + k) || {}).value || ""; return { date: v("date"), venue: v("venue").trim(), raceNo: v("raceNo") ? String(+v("raceNo")) : "", raceName: v("raceName").trim(), cls: v("cls"), surface: v("surface"), distance: v("distance"), going: v("going") }; };
+  const readRaceForm = (idp = "r") => { const v = k => ($("#" + idp + k) || {}).value || ""; return { date: v("date"), venue: v("venue").trim(), raceNo: v("raceNo") ? String(+v("raceNo")) : "", raceName: v("raceName").trim(), cls: v("cls"), surface: v("surface"), distance: v("distance"), going: v("going"), lap: normLap(v("lap")) }; };
 
   function viewRaces() {
     const list = D.races.slice().sort((a, b) => (a.date ? 1 : 0) - (b.date ? 1 : 0) || String(b.date).localeCompare(String(a.date)) || (+b.raceNo - +a.raceNo));
@@ -182,7 +183,7 @@
     const overall = e => an ? an.patterns.reduce((s, p) => s + (p.probability / 100) * ((p.rates[e.id] || 0) / 100), 0) : 0;
     const pct = v => (v * 100).toFixed(1) + "%";
     main().innerHTML = `
-      <div class="head"><div><p class="eyebrow">出馬表</p><h1>${esc(raceTitle(r))}</h1><p class="sub">${esc(raceCond(r) || "条件未入力")}</p></div>
+      <div class="head"><div><p class="eyebrow">出馬表</p><h1>${esc(raceTitle(r))}</h1><p class="sub">${esc(raceCond(r) || "条件未入力")}</p>${r.lap ? `<p class="lap"><span class="muted">ラップ</span> ${esc(r.lap)}</p>` : ""}</div>
         <div class="row"><button class="btn" id="editRace">レース条件を編集</button><button class="btn danger" id="delRace">レースを削除</button></div></div>
       <div id="delRaceBox"></div>
       <section class="card" id="raceEdit" hidden>${raceForm(r)}<div class="row"><button class="btn primary" id="saveRace">保存</button></div></section>
@@ -205,7 +206,7 @@
       </table></div>
 
       <section class="card" id="resCard"><div class="cardhead"><h2>結果を画像から読み取る</h2><span class="muted" id="resCount"></span></div>
-        <p class="muted" style="margin:0">レース結果ページのスクリーンショット（上部のレース情報と、結果・着順の一覧）を入れて「読み取る」を押すと、レース条件と、この出馬表の馬の着順・着差・馬体重をまとめて入力します。一覧が長いときは、スクロールして複数枚に分けて入れてください。</p>
+        <p class="muted" style="margin:0">レース結果ページのスクリーンショット（上部のレース情報と、結果・着順の一覧）を入れて「読み取る」を押すと、レース条件と、この出馬表の馬の着順・着差・馬体重をまとめて入力します。ラップ（ハロンタイム）の欄が写った画像を加えると、ラップも入ります。一覧が長いときは、スクロールして複数枚に分けて入れてください。</p>
         <div class="resthumbs" id="resThumbs"></div>
         <div class="row">
           <label class="btn filebtn">画像を選ぶ<input type="file" accept="image/*" multiple id="resFile"></label>
@@ -340,7 +341,7 @@
       }
       showResultConfirm(parseResultImages(got));
     });
-    const RF = [["date", "日付"], ["venue", "開催場"], ["raceNo", "レース番号"], ["raceName", "レース名"], ["cls", "クラス"], ["surface", "芝／ダート"], ["distance", "距離（m）"], ["going", "馬場状態"]];
+    const RF = [["date", "日付"], ["venue", "開催場"], ["raceNo", "レース番号"], ["raceName", "レース名"], ["cls", "クラス"], ["surface", "芝／ダート"], ["distance", "距離（m）"], ["going", "馬場状態"], ["lap", "ラップ"]];
     function showResultConfirm(res) {
       const rr = res.race, rows = res.rows;
       const twin = !r.date && rr.date ? findRace(rr.date, rr.venue || r.venue, rr.raceNo || r.raceNo) : null; // 同じレースの出馬表がすでにある
@@ -362,6 +363,7 @@
         if (k === "surface") return `<select id="${id}">${opts(SURFACES, v)}</select>`;
         if (k === "going") return `<select id="${id}">${opts(GOINGS, v)}</select>`;
         if (k === "date") return `<input type="date" id="${id}" value="${esc(v)}">`;
+        if (k === "lap") return `<input type="text" id="${id}" value="${esc(v)}" class="lapin">`;
         return `<input type="${k === "raceNo" || k === "distance" ? "number" : "text"}" id="${id}" value="${esc(v)}">`;
       };
       $("#resOut").innerHTML = `
@@ -391,6 +393,7 @@
         const nr = {};
         document.querySelectorAll("#resOut [data-rk]:checked").forEach(c => { const k = c.dataset.rk; nr[k] = ($("#rv_" + k).value || "").trim(); });
         if ("raceNo" in nr && nr.raceNo) nr.raceNo = String(+nr.raceNo);
+        if ("lap" in nr) nr.lap = normLap(nr.lap);
         const f = Object.assign({}, r, nr);
         if (!f.date) { showError("日付が空です"); return; }
         const dup = f.venue && f.raceNo && findRace(f.date, f.venue, f.raceNo);
@@ -875,7 +878,7 @@ ${JSON.stringify(data, null, 1)}`;
 
   /* ================= 起動 ================= */
   // 新しい版が公開されていたら1回だけ自動で読み込み直す（古いファイルが残る対策）
-  const APP_VERSION = "8";
+  const APP_VERSION = "9";
   async function checkUpdate() {
     if (!/github\.io$/.test(location.hostname)) return false;
     try {
