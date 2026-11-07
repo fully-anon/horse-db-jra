@@ -38,6 +38,14 @@ for (const f of ["netkeiba-pc-result-1.json", "netkeiba-pc-result-2.json"]) {
     "1:モックモック 2:パシアンジャン 3:バスタードサフラン 4:ハナウマビーチ 5:タガノバビロン 6:ブルーサン 7:ヴィンセンシオ 8:シュラック 9:ベルウェザー 10:レアンダー 11:マリオロード 12:ペイシャモノノフ 13:メルカントゥール 14:ミッキークレスト");
   eq(f + " 着順は入らない", r.rows.every(x => !x.finish), true);
 }
+// 出馬表 2件目：3行ぶんの馬番が「567」と1つにまとめて読まれている（18頭）
+{
+  const f = "netkeiba-pc-card-2-iphone.json", r = P.parseResultImages(fx(f), "card");
+  eq(f + " レース", [r.race.date, r.race.venue, r.race.raceNo, r.race.raceName, r.race.cls, r.race.surface, r.race.distance], ["2026-11-08", "京都", "12", "3歳以上1勝クラス", "1勝", "芝", "1400"]);
+  eq(f + " 馬番と馬名", r.rows.map(x => x.umaban + ":" + x.name).join(" "),
+    "1:コスモレッド 2:モルティフレーバー 3:メイショウハッケイ 4:エグジスタンス 5:キシャール 6:ブルズアイプリンス 7:アラビアンジョイ 8:ダノンブランニュー 9:ナクソス 10:ニシノトリビュート 11:サリュエ 12:ジャンヌローサ 13:タイガーロード 14:スウィッチインラヴ 15:クールフラン 16:メイクワンズデイ 17:スマッシング 18:フロンティエール");
+  eq(f + " 性別", r.rows.map(x => x.sex).join(""), "牝牝牝牡牝牡牝牡セン牡牡牝牡牝牝牡牝牡");
+}
 // 名寄せ：読み違い（トミーバローズ）を登録済みの馬の候補に出す
 eq("名寄せ 長音の抜け・濁点", P.matchHorse("トミーバローズ", [{ id: 1, name: "トーミーパローズ" }]).candidates.length, 1);
 eq("名寄せ 別の馬は候補にしない", P.matchHorse("アヴィオン", [{ id: 1, name: "トーミーパローズ" }]).candidates.length, 0);

@@ -119,7 +119,33 @@
 
   /* ================= レース結果ページのスクリーンショット ================= */
   // 単語を「見た目のかたまり」にまとめる（同じ行で、すき間がほぼない単語どうし）
+  // 行にまとめる前の下ごしらえ：
+  //  ・縦に数行ぶんまとめて読まれた数字（「567」＝5・6・7）を1文字ずつ上下に分ける（そのままだと3行が1行にまとまってしまう）
+  //  ・同じ場所に同じ文字が2回読まれたもの（「6」が重なっている）を1つにする
+  function prepWords(words) {
+    const box = w => { const v = (w.boundingPoly && w.boundingPoly.vertices) || []; const xs = v.map(p => p.x || 0), ys = v.map(p => p.y || 0); return { t: w.description || "", x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }; };
+    const mk = (t, x0, y0, x1, y1) => ({ description: t, boundingPoly: { vertices: [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }] } });
+    const bs = words.map(box).filter(b => b.t && isFinite(b.x0));
+    const hs = bs.map(b => b.y1 - b.y0).sort((a, b) => a - b), mh = hs[Math.floor(hs.length / 2)] || 1;
+    const out = [];
+    bs.forEach(b => {
+      const h = b.y1 - b.y0, t = nfkc(b.t);
+      if (/^\d{2,4}$/.test(t) && h > mh * 2.2 && (b.x1 - b.x0) / t.length < h * 0.6) {
+        const step = h / t.length;
+        for (let j = 0; j < t.length; j++) out.push(Object.assign(mk(t[j], b.x0, b.y0 + step * j, b.x1, b.y0 + step * (j + 1)), { split: true }));
+      } else out.push(Object.assign(mk(b.t, b.x0, b.y0, b.x1, b.y1), {}));
+    });
+    // 重なり：同じ文字で、ほぼ同じ位置にあるものは1つだけ残す（分けて作ったものより元のものを優先）
+    const keep = [];
+    out.sort((a, b) => (a.split ? 1 : 0) - (b.split ? 1 : 0)).forEach(w => {
+      const a = box(w);
+      const dup = keep.find(k => { const c = box(k); if (nfkc(c.t) !== nfkc(a.t)) return false; const ix = Math.min(a.x1, c.x1) - Math.max(a.x0, c.x0), iy = Math.min(a.y1, c.y1) - Math.max(a.y0, c.y0); return ix > 0 && iy > 0 && ix * iy > 0.5 * Math.min((a.x1 - a.x0) * (a.y1 - a.y0), (c.x1 - c.x0) * (c.y1 - c.y0)); });
+      if (!dup) keep.push(w);
+    });
+    return keep;
+  }
   function toSegments(words) {
+    words = prepWords(words);
     const segs = [];
     toLines(words).forEach(l => {
       let cur = null;
