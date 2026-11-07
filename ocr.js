@@ -182,7 +182,9 @@
         dates.push(d); boxes.push({ date: d, x0: Math.min(...its.map(i => i.x0)), y0: Math.min(...its.map(i => i.y0)), x1: Math.max(...its.map(i => i.x1)), y1: Math.max(...its.map(i => i.y1)) });
       } });
     });
-    if (dates.length === 1) out.date = dates[0]; else if (dates.length > 1) { out.dateOptions = dates; out.dateBoxes = boxes; }
+    const full = lines.map(l => /(20\d{2})年\s*(\d{1,2})月\s*(\d{1,2})日/.exec(l.text)).find(Boolean);
+    if (full && +full[2] >= 1 && +full[2] <= 12 && +full[3] >= 1 && +full[3] <= 31) out.date = `${full[1]}-${String(+full[2]).padStart(2, "0")}-${String(+full[3]).padStart(2, "0")}`;
+    else if (dates.length === 1) out.date = dates[0]; else if (dates.length > 1) { out.dateOptions = dates; out.dateBoxes = boxes; }
     // 開催場：「4回 京都 4日目」があれば最優先（PC版は 東京・京都 のタブも並ぶため）
     const kai = lines.map(l => new RegExp("\\d+回\\s*(" + VENUES.join("|") + ")\\s*\\d+日").exec(l.text)).find(Boolean);
     if (kai) out.venue = kai[1];
@@ -201,7 +203,7 @@
       const parts = []; let last = rs;
       for (const s of right) { if (s.x0 - last.x1 > Math.max(s.h, rs.h) * 3.5) break; parts.push(s.t); last = s; }
       const txt = parts.join("").replace(/W(IN)?\s*5/gi, "").replace(/[▼▽∨⌄■]/g, "").trim(); // WIN5 の印（W5 と読まれることも）
-      if (txt && /[^\d\s]/.test(txt) && !/^\d{1,2}R/i.test(txt)) { badge = rs; titleTxt = txt; break; }
+      if (txt && /[ぁ-んァ-ヺ一-龯A-Za-z]/.test(txt) && !/^\d{1,2}R/i.test(txt)) { badge = rs; titleTxt = txt; break; }
     }
     const TRE = /^(\d{1,2})\s*R\s+(.+)$/;
     const tlS = topS.find(l => { const m = TRE.exec(l.text); return m && /[^\d\s▼▽∨⌄]/.test(m[2]) && !/\d:\d{2}/.test(l.text) && (l.text.match(/\d{1,2}\s*R\b/g) || []).length === 1; });
@@ -280,7 +282,19 @@
   const MARGIN = /^(ハナ|アタマ|クビ|大差|大|同着|\d{1,2}|\d\/\d|\d\.\d\/\d|\d+\.\d\/\d)$/;
   // 結果・着順の一覧（1行＝1頭）
   // mode: "result"（結果・着順）または "card"（出馬表：着順・タイムがない）
+  function splitTallNumbers(segs) {
+    const hs = segs.map(s => s.h).sort((a, b) => a - b), mh = hs[Math.floor(hs.length / 2)] || 1;
+    const out = [];
+    segs.forEach(s => {
+      if (/^\d{2,3}$/.test(s.t) && s.h > mh * 2.2 && (s.x1 - s.x0) / s.t.length < s.h * 0.6) {
+        const k = s.t.length, step = (s.y1 - s.y0) / k;
+        for (let j = 0; j < k; j++) { const y0 = s.y0 + step * j, y1 = y0 + step; out.push(Object.assign({}, s, { t: s.t[j], y0, y1, h: step, cy: (y0 + y1) / 2 })); }
+      } else out.push(s);
+    });
+    return out;
+  }
   function parseResultRows(segs, w, h, mode = "result") {
+    segs = splitTallNumbers(segs);
     // 馬名：左側のカタカナ。同じ行にカタカナの騎手名（ルメールなど）があっても、いちばん左だけを馬名とする
     const cand = segs.filter(s => s.x0 < w * 0.45 && /[ァ-ヺー]{2,}/.test(s.t) && !/kg|人気|倍/.test(s.t) && !/^(タイム|オッズ|馬名|ラップ|ハロン|コーナー|ペース|レース|データ|ワイド|ワイ|トリプル|マイ)/.test(s.t))
       .sort((a, b) => a.x0 - b.x0);
@@ -294,6 +308,14 @@
       const row = segs.filter(s => s !== hdr && Math.abs(s.cy - hdr.cy) < hdr.h * 1.5 && /^(タイム|人気|単勝|オッズ|着順|騎手|斤量)/.test(s.t));
       const d = row.map(s => Math.abs(s.cx - hdr.cx)).sort((a, b) => a - b)[0];
       hdrHalf = d ? d / 2 : hdr.h * 2;
+    }
+    let umaCol = null;
+    if (mode === "card") {
+      const xs = [];
+      names.forEach(nm => segs.forEach(s => { if (/^\d{1,2}$/.test(s.t) && s.x1 <= nm.x0 + nm.h * 0.3 && Math.abs(s.cy - nm.cy) < nm.h * 1.2) xs.push({ cx: s.cx, h: s.h }); }));
+      const cl = []; xs.forEach(x => { const c = cl.find(c => Math.abs(c.cx - x.cx) < Math.max(x.h, 12) * 0.9); if (c) { c.n++; c.cx = (c.cx * (c.n - 1) + x.cx) / c.n; } else cl.push({ cx: x.cx, n: 1, h: x.h }); });
+      const big = cl.filter(c => c.n >= Math.max(3, names.length * 0.3)).sort((a, b) => b.cx - a.cx);
+      if (big.length) umaCol = big[0];
     }
     const rows = [];
     const gaps = names.slice(1).map((n, i) => n.y0 - names[i].y0).filter(g => g > 0).sort((a, b) => a - b);
@@ -336,7 +358,10 @@
       const cols = []; nums.forEach(s => { const c = cols.find(c => Math.abs(c.cx - s.cx) < s.h * 0.8); if (!c) cols.push({ cx: s.cx, segs: [s] }); else c.segs.push(s); });
       cols.sort((a, b) => a.cx - b.cx);
       const pick = c => { if (!c) return undefined; const ok = c.segs.filter(s => +s.t >= 1 && +s.t <= 18); return (ok.length ? ok : c.segs).sort((a, b) => a.cy - b.cy)[0].t; };
-      if (mode === "card") { if (cols.length) r.umaban = pick(cols[cols.length - 1]); } // 出馬表：左から 枠・馬番
+      if (mode === "card") { // 出馬表：左から 枠・馬番。馬番の列の位置が分かっていれば、その列の数字だけを使う
+        if (umaCol) { const c = cols.find(c => Math.abs(c.cx - umaCol.cx) < Math.max(umaCol.h, 12) * 0.9); if (c) r.umaban = pick(c); }
+        else if (cols.length) r.umaban = pick(cols[cols.length - 1]);
+      }
       else if (cols.length >= 3) { r.finish = pick(cols[cols.length - 3]); r.umaban = pick(cols[cols.length - 1]); }
       else if (cols.length === 2) {
         // 着順の列には「着」が並ぶ。なければ「枠・馬番」とみなす

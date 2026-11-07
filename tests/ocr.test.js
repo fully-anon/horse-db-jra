@@ -30,6 +30,14 @@ for (const f of ["netkeiba-pc-result-1.json", "netkeiba-pc-result-2.json"]) {
   eq(f + " 15着ノクナレアの着差（タイムとくっついた「33.12」）", r.rows[14].margin, "2");
   eq(f + " ラップ", r.race.lap, WANT_LAP);
 }
+// 出馬表（レース前）：スマホで撮ったPC版。2行ぶんの数字が「45」「78」とまとめて読まれている
+{
+  const f = "netkeiba-pc-card-1-iphone.json", r = P.parseResultImages(fx(f), "card");
+  eq(f + " レース", [r.race.date, r.race.venue, r.race.raceNo, r.race.raceName, r.race.cls, r.race.surface, r.race.distance], ["2026-10-11", "京都", "11", "太秦S", "OP", "ダート", "1800"]);
+  eq(f + " 馬番と馬名", r.rows.map(x => x.umaban + ":" + x.name).join(" "),
+    "1:モックモック 2:パシアンジャン 3:バスタードサフラン 4:ハナウマビーチ 5:タガノバビロン 6:ブルーサン 7:ヴィンセンシオ 8:シュラック 9:ベルウェザー 10:レアンダー 11:マリオロード 12:ペイシャモノノフ 13:メルカントゥール 14:ミッキークレスト");
+  eq(f + " 着順は入らない", r.rows.every(x => !x.finish), true);
+}
 // 名寄せ：読み違い（トミーバローズ）を登録済みの馬の候補に出す
 eq("名寄せ 長音の抜け・濁点", P.matchHorse("トミーバローズ", [{ id: 1, name: "トーミーパローズ" }]).candidates.length, 1);
 eq("名寄せ 別の馬は候補にしない", P.matchHorse("アヴィオン", [{ id: 1, name: "トーミーパローズ" }]).candidates.length, 0);
