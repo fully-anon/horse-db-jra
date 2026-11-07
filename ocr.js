@@ -98,7 +98,7 @@
   }
   // 照合用：さらに小書き・濁点の違いも吸収
   function looseName(s) {
-    return normName(s).replace(/[ァィゥェォッャュョヮ]/g, c => SMALL[c]).normalize("NFD").replace(/[゙゚]/g, "").normalize("NFC");
+    return normName(s).replace(/[ァィゥェォッャュョヮ]/g, c => SMALL[c]).normalize("NFD").replace(/[゙゚]/g, "").normalize("NFC").replace(/ー/g, ""); // 長音の抜け・濁点半濁点の読み違い（バ/パ）を同じとみなす
   }
   function lev(a, b) {
     if (Math.abs(a.length - b.length) > 1) return 9;
@@ -177,10 +177,25 @@
     if (kai) out.venue = kai[1];
     else for (const l of top) { const v = VENUES.find(x => l.text.includes(x)); if (v) { out.venue = v; break; } }
     // レース名の行：「10R 三年坂S」「12R 4歳以上2勝クラス」。「10R 11R 12R」のようなタブの並びや「◀11R」は除く
+    const ovl = (a, b) => Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0) > Math.min(a.h, b.h) * 0.3;
+    const rsegs = segs.filter(s => /^\d{1,2}R$/i.test(s.t) && s.cy < h * 0.35);
+    let badge = null, titleTxt = "";
+    for (const rs of rsegs.sort((a, b) => a.cy - b.cy)) {
+      if (rsegs.filter(o => o !== rs && ovl(o, rs)).length >= 2) continue; // 1R〜12R のタブの並び
+      const right = segs.filter(s => s !== rs && s.x0 >= rs.x1 - 2 && ovl(s, rs)).sort((a, b) => a.x0 - b.x0);
+      const parts = []; let last = rs;
+      for (const s of right) { if (s.x0 - last.x1 > Math.max(s.h, rs.h) * 3.5) break; parts.push(s.t); last = s; }
+      const txt = parts.join("").replace(/WIN\s*\d/gi, "").replace(/[▼▽∨⌄■]/g, "").trim();
+      if (txt && /[^\d\s]/.test(txt) && !/^\d{1,2}R/i.test(txt)) { badge = rs; titleTxt = txt; break; }
+    }
     const TRE = /^(\d{1,2})\s*R\s+(.+)$/;
     const tlS = topS.find(l => { const m = TRE.exec(l.text); return m && /[^\d\s▼▽∨⌄]/.test(m[2]) && !/\d:\d{2}/.test(l.text) && (l.text.match(/\d{1,2}\s*R\b/g) || []).length === 1; });
     const KEY = /クラス|新馬|未勝利|ステークス|賞|カップ|特別|オープン|\(G|\(L\)|ハンデ|記念|杯/;
-    if (tlS) {
+    if (badge) {
+      out.raceNo = String(+/\d+/.exec(badge.t)[0]);
+      out.cls = classOf(titleTxt);
+      out.raceName = titleTxt;
+    } else if (tlS) {
       const m = TRE.exec(tlS.text);
       if (+m[1] >= 1 && +m[1] <= 12) out.raceNo = String(+m[1]);
       out.raceName = m[2].replace(/[▼▽∨⌄]/g, "").replace(/(\s+(\d勝|G\s*(I{1,3}|\d)|L|OP|WIN\d|[A-Z]{2,}\d?))+\s*$/i, "").trim();
@@ -195,6 +210,14 @@
     }
     // クラスはレース名の行になければ、条件の行（「サラ系3歳以上 3勝クラス」など）から
     if (!out.cls) { const cl2 = top.find(l => /サラ系|クラス|新馬|未勝利|オープン/.test(l.text) && classOf(l.text)); if (cl2) out.cls = classOf(cl2.text); }
+    // レース名の後ろに付いたクラスの印（「三年坂S3」の「3」＝3勝、「G1」など）を外す
+    if (out.raceName) {
+      let n = out.raceName;
+      const lv = /^(\d)勝$/.exec(out.cls || "");
+      if (lv && new RegExp("[^\\d]" + lv[1] + "$").test(n)) n = n.slice(0, -1);
+      n = n.replace(/\s*(\d勝|G\s*(III|II|I|[123])|\(L\)|L|OP)$/i, "").trim(); // 「2勝クラス」のようにクラス名そのものがレース名の場合は残す
+      out.raceName = n || out.raceName;
+    }
     if (!out.raceNo) { // 「◀11R」のような移動ボタンは除いて、いちばん多く出てくるレース番号
       const cnt = {}; lines.forEach(l => { const re = /(^|[^◀◁<▶▷>\d])(\d{1,2})\s*R(?![a-z])/gi; let m; while ((m = re.exec(l.text))) if (+m[2] >= 1 && +m[2] <= 12) cnt[+m[2]] = (cnt[+m[2]] || 0) + 1; });
       const best = Object.entries(cnt).sort((a, b) => b[1] - a[1])[0]; if (best) out.raceNo = best[0];
@@ -269,7 +292,16 @@
       if (tm) r.time = (+tm[1]) * 60 + (+tm[2]) + (+tm[3]) / 10; // 走破タイム（秒）
       if (wt) { const m = WRE.exec(wt.t) || /()(\d{3})\s*kg/i.exec(wt.t); if (+m[2] >= 300 && +m[2] <= 700) r.weight = m[2]; }
       // 名前より左の数字：左から 着順・枠・馬番
-      const nums = band.filter(s => s.x1 <= nm.x0 + nm.h * 0.3 && /^\d{1,2}$/.test(s.t)).sort((a, b) => a.cx - b.cx);
+      const nums = [];
+      band.filter(s => s.x1 <= nm.x0 + nm.h * 0.3 && /^\d{1,3}$/.test(s.t)).forEach(s => {
+        if (s.t.length < 3) { nums.push(s); return; }
+        // 「157」のように着順と枠番がくっついたもの：先頭2けた（18以下）＋1けた、または 1けた＋2けた に分ける
+        const a = +s.t.slice(0, 2) <= 18 ? [s.t.slice(0, 2), s.t.slice(2)] : [s.t.slice(0, 1), s.t.slice(1)];
+        const wdt = s.x1 - s.x0, k = a[0].length / 3;
+        nums.push(Object.assign({}, s, { t: a[0], x1: s.x0 + wdt * k, cx: s.x0 + wdt * k / 2 }));
+        nums.push(Object.assign({}, s, { t: a[1], x0: s.x0 + wdt * k, cx: s.x0 + wdt * (1 + k) / 2 }));
+      });
+      nums.sort((a, b) => a.cx - b.cx);
       const cols = []; nums.forEach(s => { const c = cols.find(c => Math.abs(c.cx - s.cx) < s.h * 0.8); if (!c) cols.push({ cx: s.cx, segs: [s] }); else c.segs.push(s); });
       cols.sort((a, b) => a.cx - b.cx);
       const pick = c => c && c.segs.sort((a, b) => a.cy - b.cy)[0].t;
