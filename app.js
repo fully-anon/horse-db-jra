@@ -2,7 +2,7 @@
 (function () {
   "use strict";
   const { Auth, Settings, AuthError, NetError, shrinkImage, newId, nowStr } = window.Store;
-  const { VENUES, parsePaddock, matchHorse, normName, parseResultImages, normLap } = window.Paddock;
+  const { VENUES, parsePaddock, matchHorse, normName, parseResultImages, normLap, lapPairs, lapMarks, formatLap } = window.Paddock;
   const CLASSES = ["新馬", "未勝利", "1勝", "2勝", "3勝", "OP", "L", "G3", "G2", "G1"];
   const SURFACES = ["芝", "ダート"], GOINGS = ["良", "稍重", "重", "不良"], SEXES = ["牡", "牝", "セン"];
   const STYLES = ["逃げ", "先行", "差し", "追込", "自在"], RESULTS = ["好走", "凡走", "大敗"];
@@ -42,6 +42,46 @@
     const ws = good.map(e => +e.weight).filter(w => w > 0);
     return { count: good.length, paces, weight: ws.length ? (Math.min(...ws) === Math.max(...ws) ? `${ws[0]}kg` : `${Math.min(...ws)}〜${Math.max(...ws)}kg`) : "" };
   }
+
+  /* ---------------- ラップ：距離とタイムを組で表示・入力 ---------------- */
+  function lapTable(lap, distance) {
+    const pr = lapPairs(lap, distance); if (!pr.length) return "";
+    return `<div class="laptable"><table><thead><tr><th scope="row">距離</th>${pr.map((p, j) => `<th>${p.m ? p.m + "m" : (j + 1) + "F"}</th>`).join("")}</tr></thead>
+      <tbody><tr><th scope="row">ラップ</th>${pr.map(p => `<td>${esc(p.t)}</td>`).join("")}</tr></tbody></table></div>`;
+  }
+  // 入力欄：p は id の頭（"r"、"iv_" など）。距離の欄は p+"distance"
+  function lapCells(pairs, distance) {
+    let pr = pairs.slice();
+    const n = Math.ceil((+distance || 0) / 200);
+    if (!pr.length && n) pr = (lapMarks(distance, n) || []).map(m => ({ m, t: "" }));
+    if (!pr.length) return `<p class="muted lapnote">距離を入れると、200mごとの入力欄が出ます。下の欄にまとめて貼り付けることもできます。</p>`;
+    const warn = +distance && pr.some(x => !x.m) ? `<p class="miss lapwarn">ラップが${pr.length}区間あり、距離${+distance}mの${n}区間と合いません。距離か値を確認してください</p>` : "";
+    return warn + pr.map((x, j) => `<label class="lapc"><span>${x.m ? x.m + "m" : (j + 1) + "F"}</span><input type="text" inputmode="decimal" data-m="${x.m || ""}" value="${esc(x.t)}" aria-label="${x.m ? x.m + "m" : (j + 1) + "ハロン目"}のラップ"></label>`).join("");
+  }
+  function lapEditor(p, lap, distance) {
+    return `<div class="lapbox" data-p="${p}"><div class="lapgrid" id="${p}lapgrid">${lapCells(lapPairs(lap, distance), distance)}</div>
+      <input type="text" class="lappaste" id="${p}lapPaste" placeholder="まとめて入力：12.2-11.2-11.6…（区切りは空白でも可）" inputmode="decimal" autocomplete="off" aria-label="ラップをまとめて入力"></div>`;
+  }
+  function readLap(p) {
+    const dist = ($("#" + p + "distance") || {}).value || "";
+    const paste = ($("#" + p + "lapPaste") || {}).value || "";
+    if (paste.trim()) return normLap(paste, dist);
+    const pr = [...document.querySelectorAll("#" + CSS.escape(p) + "lapgrid input")].map(i => ({ m: +i.dataset.m || null, t: i.value.trim() })).filter(x => /^\d{1,2}(\.\d)?$/.test(x.t)).map(x => ({ m: x.m, t: (+x.t).toFixed(1) }));
+    return normLap(formatLap(pr), dist);
+  }
+  // まとめて入力した値や、距離の変更を入力欄に反映
+  document.addEventListener("input", e => {
+    const el = e.target; if (!el.id) return;
+    let p = null;
+    if (el.classList.contains("lappaste")) p = el.id.replace(/lapPaste$/, "");
+    else if (/distance$/.test(el.id) && $("#" + el.id.replace(/distance$/, "") + "lapgrid")) p = el.id.replace(/distance$/, "");
+    if (p === null) return;
+    const grid = $("#" + p + "lapgrid"), dist = ($("#" + p + "distance") || {}).value || "";
+    const pasteVal = ($("#" + p + "lapPaste") || {}).value || "";
+    const cur = [...grid.querySelectorAll("input")].map(i => i.value.trim()).filter(Boolean);
+    const src = el.classList.contains("lappaste") ? pasteVal : (cur.length ? cur.join("-") : "");
+    grid.innerHTML = lapCells(lapPairs(src, dist), dist);
+  });
 
   /* ---------------- 画像の貼り付け ---------------- */
   // ボタンから：クリップボードの画像を読む（ブラウザが確認を求めることがあります）
@@ -145,10 +185,10 @@
       <label>芝／ダート<select data-f="${idp}surface" id="${idp}surface">${opts(SURFACES, r.surface)}</select></label>
       <label>距離（m）<input type="number" inputmode="numeric" step="100" data-f="${idp}distance" id="${idp}distance" value="${esc(r.distance)}" placeholder="1600"></label>
       <label>馬場状態<select data-f="${idp}going" id="${idp}going">${opts(GOINGS, r.going)}</select></label>
-      <label class="span2">ラップ（200mごと）<input type="text" data-f="${idp}lap" id="${idp}lap" value="${esc(r.lap)}" placeholder="12.5-10.9-11.3-11.6-11.8-12.1-11.9-12.4" inputmode="decimal" autocomplete="off"></label>
+      <div class="span2 lapfield"><span class="lbl">ラップ（距離ごと）</span>${lapEditor(idp, r.lap, r.distance)}</div>
     </div>`;
   }
-  const readRaceForm = (idp = "r") => { const v = k => ($("#" + idp + k) || {}).value || ""; return { date: v("date"), venue: v("venue").trim(), raceNo: v("raceNo") ? String(+v("raceNo")) : "", raceName: v("raceName").trim(), cls: v("cls"), surface: v("surface"), distance: v("distance"), going: v("going"), lap: normLap(v("lap")) }; };
+  const readRaceForm = (idp = "r") => { const v = k => ($("#" + idp + k) || {}).value || ""; return { date: v("date"), venue: v("venue").trim(), raceNo: v("raceNo") ? String(+v("raceNo")) : "", raceName: v("raceName").trim(), cls: v("cls"), surface: v("surface"), distance: v("distance"), going: v("going"), lap: readLap(idp) }; };
 
   function viewRaces() {
     const list = D.races.slice().sort((a, b) => (a.date ? 1 : 0) - (b.date ? 1 : 0) || String(b.date).localeCompare(String(a.date)) || (+b.raceNo - +a.raceNo));
@@ -184,9 +224,10 @@
     const overall = e => an ? an.patterns.reduce((s, p) => s + (p.probability / 100) * ((p.rates[e.id] || 0) / 100), 0) : 0;
     const pct = v => (v * 100).toFixed(1) + "%";
     main().innerHTML = `
-      <div class="head"><div><p class="eyebrow">出馬表</p><h1>${esc(raceTitle(r))}</h1><p class="sub">${esc(raceCond(r) || "条件未入力")}</p>${r.lap ? `<p class="lap"><span class="muted">ラップ</span> ${esc(r.lap)}</p>` : ""}</div>
+      <div class="head"><div><p class="eyebrow">出馬表</p><h1>${esc(raceTitle(r))}</h1><p class="sub">${esc(raceCond(r) || "条件未入力")}</p></div>
         <div class="row"><button class="btn" id="editRace">レース条件を編集</button><button class="btn danger" id="delRace">レースを削除</button></div></div>
       <div id="delRaceBox"></div>
+      ${r.lap ? `<section class="lapsec"><h2 class="sub3">ラップ</h2>${lapTable(r.lap, r.distance)}</section>` : ""}
       <section class="card" id="raceEdit" hidden>${raceForm(r)}<div class="row"><button class="btn primary" id="saveRace">保存</button></div></section>
       ${an ? `<section class="patterns">${an.patterns.map((p, i) => `<div class="pat"><span class="pnum">展開${i + 1}</span><b>${esc(p.name)}</b><span class="prob">${p.probability.toFixed(1)}%</span><p>${esc(p.summary)}</p></div>`).join("")}<p class="muted">分析日時 ${esc(r.analyzedAt)}。基準オッズ＝この単勝オッズを超えれば回収率100%超え</p></section>` : ""}
       <div class="tablewrap"><table class="card-table">
@@ -420,14 +461,15 @@
         if (k === "surface") return `<select id="${id}">${opts(SURFACES, v)}</select>`;
         if (k === "going") return `<select id="${id}">${opts(GOINGS, v)}</select>`;
         if (k === "raceNo" || k === "distance") return `<input type="number" inputmode="numeric" id="${id}" value="${esc(v)}">`;
-        return `<input type="text" id="${id}" value="${esc(v)}" ${k === "lap" ? 'class="lapin" inputmode="decimal"' : ""}>`;
+        if (k === "lap") return lapEditor("iv_", v, val("distance"));
+        return `<input type="text" id="${id}" value="${esc(v)}">`;
       };
       const read = k => rr[k] ? "" : `<span class="miss">読み取れず</span>`;
       $("#resOut").innerHTML = `
         ${!rows.length && !FIELDS.some(([k]) => rr[k]) ? banner(isCard ? "画像から出馬表を読み取れませんでした。出馬表のスクリーンショットか、文字が小さすぎないかを確認してください" : "画像から結果を読み取れませんでした。結果ページのスクリーンショットか、文字が小さすぎないかを確認してください") : ""}
         ${!rows.length && FIELDS.some(([k]) => rr[k]) ? banner(isCard ? "馬の一覧を読み取れませんでした。結果のスクリーンショットなら「結果（レース後）」に切り替えてください" : "着順の一覧を読み取れませんでした。出馬表のスクリーンショットなら「出馬表（レース前）」に切り替えてください") : ""}
         <h3 class="sub3">レース情報</h3>
-        <div class="grid form rf">${FIELDS.map(([k, l]) => `<label class="${k === "lap" || k === "raceName" ? "span2" : ""}">${l} ${k === "date" && rr.dateOptions && !rr.date ? `<span class="miss">選んでください</span>` : read(k)}${fieldInput(k)}</label>`).join("")}</div>
+        <div class="grid form rf">${FIELDS.map(([k, l]) => k === "lap" ? `<div class="span2 lapfield"><span class="lbl">${l}（距離ごと） ${read(k)}</span>${fieldInput(k)}</div>` : `<label class="${k === "raceName" ? "span2" : ""}">${l} ${k === "date" && rr.dateOptions && !rr.date ? `<span class="miss">選んでください</span>` : read(k)}${fieldInput(k)}</label>`).join("")}</div>
         <div id="iTarget"></div>
         ${rows.length ? `<h3 class="sub3">${isCard ? "出走馬" : "結果"}（${rows.length}頭）</h3>
           ${!isCard && !res.winTime ? banner("1着の馬の走破タイムが読み取れなかったため、着差（1着とのタイム差）を計算できませんでした。1着の行が写った画像を加えるか、手で入力してください。") : ""}
@@ -445,7 +487,7 @@
           <p class="muted">下のボタンで、文字認識の結果（文字と位置）をコピーできます。Claude とのチャットに貼り付けてもらえれば、読み取りのルールを調整できます。画像そのものや Google の情報は含まれません。</p>
           <div class="row"><button class="btn small" id="dbgCopy">読み取りの詳細をコピー</button></div><textarea id="dbgText" class="mono" rows="4" hidden readonly></textarea></details>`;
 
-      const form = () => { const f = {}; FIELDS.forEach(([k]) => { const el = $("#iv_" + k); f[k] = el ? String(el.value || "").trim() : ""; }); if (f.raceNo) f.raceNo = String(+f.raceNo); f.lap = normLap(f.lap); return f; };
+      const form = () => { const f = {}; FIELDS.forEach(([k]) => { const el = $("#iv_" + k); f[k] = el ? String(el.value || "").trim() : ""; }); if (f.raceNo) f.raceNo = String(+f.raceNo); if (FIELDS.some(([k]) => k === "lap")) f.lap = readLap("iv_"); return f; };
       // 反映先のレース：日付・開催場・レース番号で探す。日付なしで先に登録したレース（パドック登録）も拾う
       const findTarget = f => {
         if (fixedRace) {
@@ -818,7 +860,7 @@ ${JSON.stringify(data, null, 1)}`;
 
   /* ================= 起動 ================= */
   // 新しい版が公開されていたら1回だけ自動で読み込み直す（古いファイルが残る対策）
-  const APP_VERSION = "13";
+  const APP_VERSION = "14";
   async function checkUpdate() {
     if (!/github\.io$/.test(location.hostname)) return false;
     try {

@@ -113,6 +113,23 @@ legend{font-size:13px;color:var(--muted);font-weight:700;padding:0 4px}
 .manual{display:flex;flex-direction:column;gap:16px}
 .manual>summary{cursor:pointer;color:var(--muted);font-weight:700;font-size:14px;padding:4px 0}
 .manual:not([open])>summary~*{display:none}
+.lapsec{display:flex;flex-direction:column;gap:6px}
+.laptable{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.laptable table{border-collapse:collapse;font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:14px;min-width:100%}
+.laptable th,.laptable td{padding:8px 10px;text-align:center;white-space:nowrap;border-left:1px solid var(--line)}
+.laptable thead th{font-size:12px;color:var(--muted);font-weight:700;border-bottom:1px solid var(--line)}
+.laptable th[scope=row]{text-align:left;color:var(--muted);font-family:var(--font);font-size:12px;border-left:0;position:sticky;left:0;background:var(--surface)}
+.laptable td{font-weight:700}
+.lapfield{display:flex;flex-direction:column;gap:6px}
+.lapfield .lbl{font-size:13px;color:var(--muted);font-weight:700}
+.lapbox{display:flex;flex-direction:column;gap:8px}
+.lapgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:6px}
+.lapc{gap:2px;font-size:12px}
+.lapc span{font-family:var(--mono);font-weight:700}
+.lapc input{text-align:center;font-family:var(--mono);padding:6px 4px;min-height:40px}
+.lapnote{margin:0}
+.lapwarn{grid-column:1/-1;margin:0;display:block;border-radius:8px;padding:6px 10px;font-size:12px}
+.lappaste{font-family:var(--mono);font-size:14px}
 .sub3{font-size:14px;margin:6px 0 0}
 .card-table.rc{min-width:600px}
 .card-table.rc td{vertical-align:middle}

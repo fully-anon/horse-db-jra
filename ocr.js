@@ -252,7 +252,15 @@
       if (!next || ns.length >= 20) break;
       ns = ns.concat(next.ns); last = next;
     }
-    return ns.map(v => v.toFixed(1)).join("-");
+    // 距離の見出し（「200m 400m … 1600m」）が同じ数だけあれば、その距離と組にする
+    const marks = [];
+    for (const l of lines.slice(0, best.i).reverse()) {
+      const ms = (l.text.match(/(\d{2,4})\s*m(?![a-z])/gi) || []).map(x => +x.replace(/\D/g, ""));
+      if (ms.length >= 3 && ms.every((v, j) => j === 0 || v > ms[j - 1])) { marks.push(...ms); if (marks.length >= ns.length) break; }
+      if (best.i - lines.indexOf(l) > 6) break;
+    }
+    const ms2 = marks.length === ns.length ? marks : null;
+    return formatLap(ns.map((v, j) => ({ m: ms2 ? ms2[j] : null, t: v.toFixed(1) })));
   }
   const MARGIN = /^(ハナ|アタマ|クビ|大差|大|同着|\d{1,2}|\d\/\d|\d\.\d\/\d|\d+\.\d\/\d)$/;
   // 結果・着順の一覧（1行＝1頭）
@@ -285,7 +293,7 @@
       const WRE = /(^|[^\d.])(\d{3})\s*(kg)?\s*\(\s*([+\-−]?\d{1,2}|前計不|計不)\s*\)/i;
       const wt = band.find(s => WRE.test(s.t)) || band.find(s => /\d{3}\s*kg/i.test(s.t) && s.x0 < w * 0.6);
       const wtRes = wt && WRE.test(wt.t);
-      const sexSeg = band.find(s => /^(牡|牝|セ|騸)\s*\d{1,2}$/.test(s.t) || /^(牡|牝|セ|騸)\d/.test(s.t));
+      const sexSeg = band.find(s => /^(牡|牝|セ|騸)\s*\d{0,2}$/.test(s.t) && s.x0 >= nm.x0 - nm.h * 0.5); // 「牡」「3」が別々に読まれることがある
       if (mode === "card") { if (!sexSeg && !wtRes) return; } // 出馬表の行：性齢（または馬体重）がある行
       else if (!time && !wtRes) return; // 結果の行ではない（パドック映像のテロップなど）
       const r = { name: (nfkc(nm.t).match(/[ァ-ヺー]{2,}/g) || []).sort((a, b) => b.length - a.length)[0] };
@@ -332,7 +340,7 @@
         r.hasTime = true;
       }
       // 性齢「牡4」「セ4」
-      const sx = band.find(s => /^(牡|牝|セ|騸)\s*\d{1,2}$/.test(s.t) || /^(牡|牝|セ|騸)\d/.test(s.t));
+      const sx = sexSeg;
       if (sx) r.sex = { "牡": "牡", "牝": "牝", "セ": "セン", "騸": "セン" }[sx.t[0]];
       rows.push(r);
     });
@@ -361,7 +369,29 @@
   }
 
   // 手入力・貼り付けしたラップを「12.5-10.9-…」の形にそろえる
-  function normLap(s) { const ns = lapNums(nfkc(String(s || "")).replace(/[‐－―–—ー]/g, "-")); return ns.map(v => v.toFixed(1)).join("-"); }
+  /* ---------------- ラップ（距離とタイムの組） ----------------
+     保存形式：「200m:12.2,400m:11.2,…」。距離が分からないときは「12.2-11.2-…」 */
+  // 距離からハロンの区切りを出す（1150mなら 150m,350m,…,1150m）
+  function lapMarks(distance, n) {
+    const d = +distance; if (!d || !n) return null;
+    const first = d - (n - 1) * 200;
+    if (first <= 0 || first > 200) return null;
+    return Array.from({ length: n }, (_, j) => first + j * 200);
+  }
+  function lapPairs(s, distance) {
+    const str = nfkc(String(s || ""));
+    const pr = []; const re = /(\d{2,4})\s*m?\s*[:：=]\s*(\d{1,2}\.\d)/gi; let m;
+    while ((m = re.exec(str))) pr.push({ m: +m[1], t: (+m[2]).toFixed(1) });
+    if (pr.length) return pr;
+    const ns = lapNums(str.replace(/[‐－―–—ー]/g, "-"));
+    const mk = lapMarks(distance, ns.length);
+    return ns.map((v, j) => ({ m: mk ? mk[j] : null, t: v.toFixed(1) }));
+  }
+  function formatLap(pairs) {
+    if (!pairs || !pairs.length) return "";
+    return pairs.every(p => p.m) ? pairs.map(p => `${p.m}m:${p.t}`).join(",") : pairs.map(p => p.t).join("-");
+  }
+  function normLap(s, distance) { return formatLap(lapPairs(s, distance)); }
 
-  window.Paddock = { VENUES, parsePaddock, normName, matchHorse, parseResultImages, inferDate, normLap };
+  window.Paddock = { VENUES, parsePaddock, normName, matchHorse, parseResultImages, inferDate, normLap, lapPairs, lapMarks, formatLap };
 })();
