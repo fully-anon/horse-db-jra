@@ -12,10 +12,12 @@
       return { t: w.description || "", x0, x1, y0, y1, cy: (y0 + y1) / 2, h: Math.max(1, y1 - y0) };
     }).filter(i => i.t && isFinite(i.x0));
     items.sort((a, b) => a.cy - b.cy);
+    // 何行ぶんもある縦長の文字（「++++」「567」など）で、別の行どうしがつながらないよう、行の高さは「ふつうの文字の高さ」の1.6倍までとして判定する
+    const hs = items.map(i => i.h).sort((a, b) => a - b), cap = (hs[Math.floor(hs.length / 2)] || 1) * 1.6;
     const lines = [];
     for (const it of items) {
-      const ln = lines.find(l => Math.abs(l.cy - it.cy) < Math.max(l.h, it.h) * 0.55);
-      if (ln) { ln.items.push(it); ln.cy = (ln.cy * (ln.items.length - 1) + it.cy) / ln.items.length; ln.h = Math.max(ln.h, it.h); }
+      const ln = lines.find(l => Math.abs(l.cy - it.cy) < Math.min(Math.max(l.h, it.h), cap) * 0.55);
+      if (ln) { ln.items.push(it); ln.cy = (ln.cy * (ln.items.length - 1) + it.cy) / ln.items.length; ln.h = Math.max(ln.h, Math.min(it.h, cap)); }
       else lines.push({ items: [it], cy: it.cy, h: it.h });
     }
     lines.forEach(l => {
@@ -130,6 +132,7 @@
     const out = [];
     bs.forEach(b => {
       const h = b.y1 - b.y0, t = nfkc(b.t);
+      if (/^[+＋|｜\-－・]+$/.test(t) && h > mh * 2.2) return; // 記号だけの縦長のかたまり（右端の「+」ボタンの列など）は使わない
       if (/^\d{2,4}$/.test(t) && h > mh * 2.2 && (b.x1 - b.x0) / t.length < h * 0.6) {
         const step = h / t.length;
         for (let j = 0; j < t.length; j++) out.push(Object.assign(mk(t[j], b.x0, b.y0 + step * j, b.x1, b.y0 + step * (j + 1)), { split: true }));
