@@ -124,7 +124,10 @@
     toLines(words).forEach(l => {
       let cur = null;
       l.items.forEach(it => {
-        if (cur && it.x0 - cur.x1 < Math.max(cur.h, it.h) * 0.35) {
+        // 数字と日本語の境目（「11フェアリーライク」「55.0坂井」など）は、すき間がごく小さくないかぎり分ける
+        const a = cur && cur.t.slice(-1), b = it.t[0], gap = cur ? it.x0 - cur.x1 : 0, hh = cur ? Math.max(cur.h, it.h) : 0;
+        const kindChange = cur && (/[\d.]/.test(a) && /[ぁ-んァ-ヺ一-龯]/.test(b) || /[ぁ-んァ-ヺ一-龯]/.test(a) && /\d/.test(b));
+        if (cur && gap < hh * (kindChange ? 0.08 : 0.35)) {
           cur.t += it.t; cur.x1 = Math.max(cur.x1, it.x1); cur.y0 = Math.min(cur.y0, it.y0); cur.y1 = Math.max(cur.y1, it.y1); cur.h = cur.y1 - cur.y0;
         } else { if (cur) segs.push(cur); cur = { t: it.t, x0: it.x0, x1: it.x1, y0: it.y0, y1: it.y1, h: it.h }; }
       });
@@ -163,19 +166,38 @@
     const out = {};
     const lines = toLines(segs.map(s => ({ description: s.t, boundingPoly: { vertices: [{ x: s.x0, y: s.y0 }, { x: s.x1, y: s.y1 }] } })))
       .map(l => ({ text: nfkc(l.text), cy: l.cy })).sort((a, b) => a.cy - b.cy);
-    const top = lines.filter(l => l.cy < h * 0.35);
-    // 日付は「5/2(土)」の形だけを採る（着差の「1.1/2」などを日付と間違えないため）
-    const DRE = /(^|[^\d.])(\d{1,2})\/(\d{1,2})\s*[(（]\s*([日月火水木金土])/;
-    const dl = top.find(l => DRE.test(l.text));
-    if (dl) { const m = DRE.exec(dl.text); if (+m[2] >= 1 && +m[2] <= 12 && +m[3] >= 1 && +m[3] <= 31) out.date = inferDate(+m[2], +m[3], m[4]); }
-    for (const l of (dl ? [dl, ...top] : top)) { const v = VENUES.find(x => l.text.includes(x)); if (v) { out.venue = v; break; } }
+    const spaced = toLines(segs.map(s => ({ description: s.t + " ", boundingPoly: { vertices: [{ x: s.x0, y: s.y0 }, { x: s.x1, y: s.y1 }] } })))
+      .map(l => ({ text: nfkc(l.text).trim(), cy: l.cy })).sort((a, b) => a.cy - b.cy);
+    const top = lines.filter(l => l.cy < h * 0.35), topS = spaced.filter(l => l.cy < h * 0.35);
+    // 日付：「5/2(土)」または「10月11日(日)」。着差の「1.1/2」などは日付にしない。
+    // PC版のように日付のタブが並んでいるときは、どれが選ばれているか分からないので候補として返す
+    const DRES = [/(^|[^\d.])(\d{1,2})\/(\d{1,2})\s*[(（]\s*([日月火水木金土])/g, /(^|[^\d])(\d{1,2})月\s*(\d{1,2})日\s*[(（]\s*([日月火水木金土])/g];
+    const dates = [];
+    top.forEach(l => DRES.forEach(re => { re.lastIndex = 0; let m; while ((m = re.exec(l.text))) if (+m[2] >= 1 && +m[2] <= 12 && +m[3] >= 1 && +m[3] <= 31) { const d = inferDate(+m[2], +m[3], m[4]); if (!dates.includes(d)) dates.push(d); } }));
+    if (dates.length === 1) out.date = dates[0]; else if (dates.length > 1) out.dateOptions = dates;
+    // 開催場：「4回 京都 4日目」があれば最優先（PC版は 東京・京都 のタブも並ぶため）
+    const kai = lines.map(l => new RegExp("\\d+回\\s*(" + VENUES.join("|") + ")\\s*\\d+日").exec(l.text)).find(Boolean);
+    if (kai) out.venue = kai[1];
+    else for (const l of top) { const v = VENUES.find(x => l.text.includes(x)); if (v) { out.venue = v; break; } }
+    // レース名の行：「10R 三年坂S」「12R 4歳以上2勝クラス」。「10R 11R 12R」のようなタブの並びや「◀11R」は除く
+    const TRE = /^(\d{1,2})\s*R\s+(.+)$/;
+    const tlS = topS.find(l => { const m = TRE.exec(l.text); return m && /[^\d\s▼▽∨⌄]/.test(m[2]) && !/\d:\d{2}/.test(l.text) && (l.text.match(/\d{1,2}\s*R\b/g) || []).length === 1; });
     const KEY = /クラス|新馬|未勝利|ステークス|賞|カップ|特別|オープン|\(G|\(L\)|ハンデ|記念|杯/;
-    const tl = top.find(l => KEY.test(l.text) && !/\d:\d{2}\.\d/.test(l.text));
-    if (tl) {
-      const m = /(\d{1,2})\s*R/.exec(tl.text); if (m && +m[1] >= 1 && +m[1] <= 12) out.raceNo = String(+m[1]);
-      out.raceName = tl.text.replace(/^.*?\d{1,2}\s*R\s*/, "").replace(/[▼▽∨⌄]/g, "").trim();
-      out.cls = classOf(tl.text);
+    if (tlS) {
+      const m = TRE.exec(tlS.text);
+      if (+m[1] >= 1 && +m[1] <= 12) out.raceNo = String(+m[1]);
+      out.raceName = m[2].replace(/[▼▽∨⌄]/g, "").replace(/(\s+(\d勝|G\s*(I{1,3}|\d)|L|OP|WIN\d|[A-Z]{2,}\d?))+\s*$/i, "").trim();
+      out.cls = classOf(m[2]);
+    } else {
+      const tl = top.find(l => KEY.test(l.text) && !/\d:\d{2}\.\d/.test(l.text));
+      if (tl) {
+        const m = /(\d{1,2})\s*R/.exec(tl.text); if (m && +m[1] >= 1 && +m[1] <= 12) out.raceNo = String(+m[1]);
+        out.raceName = tl.text.replace(/^.*?\d{1,2}\s*R\s*/, "").replace(/[▼▽∨⌄]/g, "").trim();
+        out.cls = classOf(tl.text);
+      }
     }
+    // クラスはレース名の行になければ、条件の行（「サラ系3歳以上 3勝クラス」など）から
+    if (!out.cls) { const cl2 = top.find(l => /サラ系|クラス|新馬|未勝利|オープン/.test(l.text) && classOf(l.text)); if (cl2) out.cls = classOf(cl2.text); }
     if (!out.raceNo) { // 「◀11R」のような移動ボタンは除いて、いちばん多く出てくるレース番号
       const cnt = {}; lines.forEach(l => { const re = /(^|[^◀◁<▶▷>\d])(\d{1,2})\s*R(?![a-z])/gi; let m; while ((m = re.exec(l.text))) if (+m[2] >= 1 && +m[2] <= 12) cnt[+m[2]] = (cnt[+m[2]] || 0) + 1; });
       const best = Object.entries(cnt).sort((a, b) => b[1] - a[1])[0]; if (best) out.raceNo = best[0];
@@ -188,9 +210,9 @@
       const g = after.match(/稍重|不良|稍|不|重|良/g);
       if (g) out.going = { "稍": "稍重", "不": "不良" }[g[g.length - 1]] || g[g.length - 1];
     }
+    const gm = lines.map(l => /馬場\s*[:：]\s*(稍重|不良|重|良|稍|不)/.exec(l.text)).find(Boolean); // PC版「馬場:稍重」
+    if (gm) out.going = { "稍": "稍重", "不": "不良" }[gm[1]] || gm[1];
     // ラップは数字が詰まって「12.311.0」とならないよう、かたまりの間に空白を入れた行で読む
-    const spaced = toLines(segs.map(s => ({ description: s.t + " ", boundingPoly: { vertices: [{ x: s.x0, y: s.y0 }, { x: s.x1, y: s.y1 }] } })))
-      .map(l => ({ text: nfkc(l.text), cy: l.cy })).sort((a, b) => a.cy - b.cy);
     out.lap = parseLap(spaced);
     return out;
   }
@@ -215,18 +237,33 @@
   const MARGIN = /^(ハナ|アタマ|クビ|大差|大|同着|\d{1,2}|\d\/\d|\d\.\d\/\d|\d+\.\d\/\d)$/;
   // 結果・着順の一覧（1行＝1頭）
   function parseResultRows(segs, w, h) {
-    const names = segs.filter(s => s.x0 < w * 0.45 && /[ァ-ヺー]{2,}/.test(s.t) && !/kg|人気|倍/.test(s.t) && !/^(タイム|オッズ|馬名)/.test(s.t))
-      .sort((a, b) => a.y0 - b.y0);
+    // 馬名：左側のカタカナ。同じ行にカタカナの騎手名（ルメールなど）があっても、いちばん左だけを馬名とする
+    const cand = segs.filter(s => s.x0 < w * 0.45 && /[ァ-ヺー]{2,}/.test(s.t) && !/kg|人気|倍/.test(s.t) && !/^(タイム|オッズ|馬名|ラップ|ハロン|コーナー|ペース|レース|データ|ワイド|ワイ|トリプル|マイ)/.test(s.t))
+      .sort((a, b) => a.x0 - b.x0);
+    const names = [];
+    cand.forEach(s => { if (!names.some(n => Math.abs(n.cy - s.cy) < Math.max(n.h, s.h) * 0.6)) names.push(s); });
+    names.sort((a, b) => a.y0 - b.y0);
+    // 表の見出し（PC版）。「着差」の列の位置が分かれば、その列から着差を読む
+    const hdr = segs.find(s => /^着差$/.test(s.t));
+    let hdrHalf = 0;
+    if (hdr) {
+      const row = segs.filter(s => s !== hdr && Math.abs(s.cy - hdr.cy) < hdr.h * 1.5 && /^(タイム|人気|単勝|オッズ|着順|騎手|斤量)/.test(s.t));
+      const d = row.map(s => Math.abs(s.cx - hdr.cx)).sort((a, b) => a - b)[0];
+      hdrHalf = d ? d / 2 : hdr.h * 2;
+    }
     const rows = [];
     names.forEach((nm, i) => {
-      const top = nm.y0 - nm.h * 0.5, bottom = i + 1 < names.length ? names[i + 1].y0 - names[i + 1].h * 0.5 : h;
+      // 1頭分の範囲：次の馬名の手前まで（最後の行は馬名の高さの6倍まで。下の払戻しやラップを含めない）
+      const top = nm.y0 - nm.h * 0.5, bottom = Math.min(i + 1 < names.length ? names[i + 1].y0 - names[i + 1].h * 0.5 : h, nm.y0 + nm.h * 6);
       const band = segs.filter(s => s.cy >= top && s.cy < bottom && s !== nm);
       const time = band.find(s => /\d:\d{2}\.\d/.test(s.t));
-      const wt = band.find(s => /\d{3}\s*kg/i.test(s.t) && s.x0 < w * 0.6);
-      const wtRes = wt && /\d{3}\s*kg\s*\(/i.test(wt.t);
+      // 馬体重：「496kg(-6)」（スマホ版）または「478(-2)」（PC版、表の右端）
+      const WRE = /(^|[^\d.])(\d{3})\s*(kg)?\s*\(\s*([+\-−]?\d{1,2}|前計不|計不)\s*\)/i;
+      const wt = band.find(s => WRE.test(s.t)) || band.find(s => /\d{3}\s*kg/i.test(s.t) && s.x0 < w * 0.6);
+      const wtRes = wt && WRE.test(wt.t);
       if (!time && !wtRes) return; // 結果の行ではない（パドック映像のテロップなど）
       const r = { name: (nfkc(nm.t).match(/[ァ-ヺー]{2,}/g) || []).sort((a, b) => b.length - a.length)[0] };
-      if (wt) { const m = /(\d{3})\s*kg/i.exec(wt.t); r.weight = m[1]; }
+      if (wt) { const m = WRE.exec(wt.t) || /()(\d{3})\s*kg/i.exec(wt.t); if (+m[2] >= 300 && +m[2] <= 700) r.weight = m[2]; }
       // 名前より左の数字：左から 着順・枠・馬番
       const nums = band.filter(s => s.x1 <= nm.x0 + nm.h * 0.3 && /^\d{1,2}$/.test(s.t)).sort((a, b) => a.cx - b.cx);
       const cols = []; nums.forEach(s => { const c = cols.find(c => Math.abs(c.cx - s.cx) < s.h * 0.8); if (!c) cols.push({ cx: s.cx, segs: [s] }); else c.segs.push(s); });
@@ -242,8 +279,13 @@
       const stop = band.find(s => /^(中止|除外|取消|失格)$/.test(s.t) && s.x1 <= nm.x0); if (stop) r.finish = stop.t;
       if (r.umaban && !(+r.umaban >= 1 && +r.umaban <= 18)) delete r.umaban;
       if (r.finish && /^\d+$/.test(r.finish) && !(+r.finish >= 1 && +r.finish <= 18)) delete r.finish;
-      // 着差：タイムの真下、上がり3F「(36.0)」より上
-      if (time) {
+      if (!r.umaban && !r.finish) return; // 着順も馬番もない行は結果の行とみなさない
+      // 着差：PC版は「着差」の列、スマホ版はタイムの真下（上がり3F「(36.0)」より上）
+      if (hdr && time) {
+        const mg = band.filter(s => Math.abs(s.cx - hdr.cx) < hdrHalf && MARGIN.test(s.t)).sort((a, b) => Math.abs(a.cx - hdr.cx) - Math.abs(b.cx - hdr.cx));
+        r.margin = mg.length ? mg[0].t.replace(/^大$/, "大差") : "";
+        r.hasTime = true;
+      } else if (time) {
         const half = (time.x1 - time.x0) * 0.75 + time.h;
         const up = band.find(s => /^\(\d{2}\.\d\)$/.test(s.t) && Math.abs(s.cx - time.cx) < half);
         const mg = band.filter(s => s !== time && s.cy > time.cy + time.h * 0.4 && (!up || s.cy < up.cy - up.h * 0.4) && Math.abs(s.cx - time.cx) < half && MARGIN.test(s.t))
@@ -266,7 +308,8 @@
       const hd = parseRaceHeader(segs, im.w, im.h);
       Object.keys(hd).forEach(k => { if (hd[k] && !race[k]) race[k] = hd[k]; });
       parseResultRows(segs, im.w, im.h).forEach(r => {
-        const key = r.umaban ? "u" + r.umaban : "n" + normName(r.name);
+        // 同じ馬（2枚に分かれて写った行）は馬名でまとめる。馬番の読み間違いで別の馬を混ぜないため
+        const key = r.name ? "n" + normName(r.name) : "u" + r.umaban;
         const old = byKey.get(key);
         if (!old) byKey.set(key, r);
         else Object.keys(r).forEach(k => { if (r[k] && !old[k]) old[k] = r[k]; }); // 2枚に分かれた行は足し合わせる

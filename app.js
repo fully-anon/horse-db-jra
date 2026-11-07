@@ -169,7 +169,7 @@
     $("#newRace").onclick = () => { $("#newRaceBox").hidden = false; $("#rdate").focus(); };
     $("#cancelRace").onclick = () => { $("#newRaceBox").hidden = true; };
     $("#createRace").onclick = e => run(e.target, async () => {
-      const f = readRaceForm(); if (!f.date) { showError("日付を入力してください"); return; }
+      const f = readRaceForm(); if (!f.date && !(f.venue && f.raceNo)) { showError("日付、または開催場とレース番号を入力してください"); return; }
       if (f.venue && f.raceNo && findRace(f.date, f.venue, f.raceNo)) { toast("同じレースがすでにあります"); go("#/race/" + findRace(f.date, f.venue, f.raceNo).id); return; }
       const r = await save("races", Object.assign({ id: newId("R") }, f)); go("#/race/" + r.id);
     });
@@ -339,8 +339,10 @@
         }
         got.push({ words: o.words, w: im.w, h: im.h });
       }
+      lastOCR = got.map(g => ({ w: g.w, h: g.h, words: (g.words || []).map(x => { const v = (x.boundingPoly && x.boundingPoly.vertices) || []; const xs = v.map(p => p.x || 0), ys = v.map(p => p.y || 0); return [x.description, Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; }) }));
       showResultConfirm(parseResultImages(got));
     });
+    let lastOCR = null; // 調整用：Vision が返した文字と位置
     const RF = [["date", "日付"], ["venue", "開催場"], ["raceNo", "レース番号"], ["raceName", "レース名"], ["cls", "クラス"], ["surface", "芝／ダート"], ["distance", "距離（m）"], ["going", "馬場状態"], ["lap", "ラップ"]];
     function showResultConfirm(res) {
       const rr = res.race, rows = res.rows;
@@ -357,7 +359,7 @@
         return { en, h, row };
       });
       const extra = rows.filter(x => !used.has(x));
-      const anyRace = RF.some(([k]) => rr[k]);
+      const anyRace = RF.some(([k]) => rr[k]) || !!rr.dateOptions;
       const input = (k, v, id) => {
         if (k === "cls") return `<select id="${id}">${opts(CLASSES, v)}</select>`;
         if (k === "surface") return `<select id="${id}">${opts(SURFACES, v)}</select>`;
@@ -369,6 +371,8 @@
       $("#resOut").innerHTML = `
         ${!anyRace && !rows.length ? banner("画像から結果を読み取れませんでした。結果ページのスクリーンショットか確認してください") : ""}
         ${anyRace ? `<h3 class="sub3">レース条件</h3><div class="tablewrap"><table class="card-table rc"><thead><tr><th>反映</th><th>項目</th><th>いまの値</th><th>読み取った値（直せます）</th></tr></thead><tbody>
+          ${!rr.date && rr.dateOptions ? `<tr><td><input type="checkbox" class="ck" data-rk="date" id="dateCk"></td><td>日付</td><td class="${r.date ? "" : "muted"}">${esc(r.date || "未入力")}</td>
+            <td><select id="rv_date"><option value="">日付のタブが複数写っています。選んでください</option>${rr.dateOptions.map(d => `<option ${d === r.date ? "selected" : ""}>${esc(d)}</option>`).join("")}</select></td></tr>` : ""}
           ${RF.map(([k, l]) => { const cur = r[k] || "", nv = rr[k] || ""; if (!nv) return ""; const same = String(cur) === String(nv);
             return `<tr><td><input type="checkbox" class="ck" data-rk="${k}" ${same ? "" : "checked"}></td><td>${l}</td><td class="${cur ? "" : "muted"}">${esc(cur || "未入力")}</td><td>${input(k, nv, "rv_" + k)}</td></tr>`; }).join("")}
           </tbody></table></div>` : ""}
@@ -389,13 +393,23 @@
           <p class="muted">結果区分（好走／凡走／大敗）は、各馬の出走記録で選んでください。</p>` : ""}`;
       $("#resOut").scrollIntoView({ block: "start", behavior: "smooth" });
       if ($("#resCancel")) $("#resCancel").onclick = () => { $("#resOut").innerHTML = ""; };
+      if ($("#dateCk")) $("#rv_date").addEventListener("change", () => { $("#dateCk").checked = !!$("#rv_date").value; });
+      $("#resOut").insertAdjacentHTML("beforeend", `<details class="dbg"><summary>読み取りがうまくいかないとき</summary>
+        <p class="muted">下のボタンで、文字認識の結果（文字と位置）をコピーできます。Claude とのチャットに貼り付けてもらえれば、読み取りのルールを調整できます。画像そのものや Google の情報は含まれません。</p>
+        <div class="row"><button class="btn small" id="dbgCopy">読み取りの詳細をコピー</button></div><textarea id="dbgText" class="mono" rows="4" hidden readonly></textarea></details>`);
+      $("#dbgCopy").onclick = () => {
+        const text = "競走馬DB 読み取りの詳細 v1\n" + JSON.stringify(lastOCR);
+        const fb = () => { const ta = $("#dbgText"); ta.hidden = false; ta.value = text; ta.focus(); ta.select(); toast("自動でコピーできませんでした。表示された文字をすべて選んでコピーしてください"); };
+        try { navigator.clipboard.writeText(text).then(() => toast("読み取りの詳細をコピーしました"), fb); } catch (e) { fb(); }
+      };
       if ($("#resApply")) $("#resApply").onclick = ev2 => run(ev2.target, async () => {
         const nr = {};
         document.querySelectorAll("#resOut [data-rk]:checked").forEach(c => { const k = c.dataset.rk; nr[k] = ($("#rv_" + k).value || "").trim(); });
         if ("raceNo" in nr && nr.raceNo) nr.raceNo = String(+nr.raceNo);
         if ("lap" in nr) nr.lap = normLap(nr.lap);
         const f = Object.assign({}, r, nr);
-        if (!f.date) { showError("日付が空です"); return; }
+        if ("date" in nr && !nr.date) { delete nr.date; f.date = r.date; } // 日付を選ばなかったときは変えない
+        if (!f.date && !(f.venue && f.raceNo)) { showError("日付が空です"); return; }
         const dup = f.venue && f.raceNo && findRace(f.date, f.venue, f.raceNo);
         if (dup && dup.id !== r.id && r.date) { showError(`${raceTitle(dup)} がすでに別のレースとして登録されています。日付・開催場・レース番号のチェックを外すか、値を確認してください`); return; }
         const picked = [...document.querySelectorAll("#resOut [data-ri]:checked")].map(c => +c.dataset.ri);
@@ -878,7 +892,7 @@ ${JSON.stringify(data, null, 1)}`;
 
   /* ================= 起動 ================= */
   // 新しい版が公開されていたら1回だけ自動で読み込み直す（古いファイルが残る対策）
-  const APP_VERSION = "9";
+  const APP_VERSION = "10";
   async function checkUpdate() {
     if (!/github\.io$/.test(location.hostname)) return false;
     try {
