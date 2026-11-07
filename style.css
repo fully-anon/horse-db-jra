@@ -110,6 +110,9 @@ legend{font-size:13px;color:var(--muted);font-weight:700;padding:0 4px}
 .card-table.rc input.nm{min-width:170px;min-height:38px;padding:6px 8px;font-size:15px;font-weight:700}
 .card-table.rc td select{max-width:none;width:auto}
 .cand-note{display:block;font-size:12px;margin-top:2px}
+.manual{display:flex;flex-direction:column;gap:16px}
+.manual>summary{cursor:pointer;color:var(--muted);font-weight:700;font-size:14px;padding:4px 0}
+.manual:not([open])>summary~*{display:none}
 .sub3{font-size:14px;margin:6px 0 0}
 .card-table.rc{min-width:600px}
 .card-table.rc td{vertical-align:middle}

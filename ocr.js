@@ -137,16 +137,13 @@
     return segs;
   }
   const WD = "日月火水木金土";
-  // 「5/2(土)」から年を推定：曜日が一致する直近の年（今日より後は除く）
+  // 「5/2(土)」から年を推定：曜日が一致する年のうち、今日にいちばん近い日（出馬表は先の日付、結果は過ぎた日付）
   function inferDate(mo, d, wd, today = new Date()) {
-    const p = n => String(n).padStart(2, "0");
-    for (let y = today.getFullYear(); y >= today.getFullYear() - 2; y--) { // 曜日の読み間違いで何年も前にならないよう直近3年まで
-      const dt = new Date(y, mo - 1, d);
-      if (dt.getMonth() !== mo - 1 || dt > today) continue;
-      if (!wd || WD[dt.getDay()] === wd) return `${y}-${p(mo)}-${p(d)}`;
-    }
-    const y = today.getFullYear() - (new Date(today.getFullYear(), mo - 1, d) > today ? 1 : 0);
-    return `${y}-${p(mo)}-${p(d)}`;
+    const p = n => String(n).padStart(2, "0"), y0 = today.getFullYear(), cands = [];
+    for (let y = y0 - 2; y <= y0 + 1; y++) { const dt = new Date(y, mo - 1, d); if (dt.getMonth() === mo - 1) cands.push(dt); }
+    const near = list => list.sort((a, b) => Math.abs(a - today) - Math.abs(b - today))[0];
+    const best = near(cands.filter(dt => !wd || WD[dt.getDay()] === wd)) || near(cands.slice());
+    return `${best.getFullYear()}-${p(mo)}-${p(d)}`;
   }
   function classOf(t) {
     if (/G\s*(III|3)(?![\dI])/.test(t)) return "G3";
@@ -236,7 +233,8 @@
   }
   const MARGIN = /^(ハナ|アタマ|クビ|大差|大|同着|\d{1,2}|\d\/\d|\d\.\d\/\d|\d+\.\d\/\d)$/;
   // 結果・着順の一覧（1行＝1頭）
-  function parseResultRows(segs, w, h) {
+  // mode: "result"（結果・着順）または "card"（出馬表：着順・タイムがない）
+  function parseResultRows(segs, w, h, mode = "result") {
     // 馬名：左側のカタカナ。同じ行にカタカナの騎手名（ルメールなど）があっても、いちばん左だけを馬名とする
     const cand = segs.filter(s => s.x0 < w * 0.45 && /[ァ-ヺー]{2,}/.test(s.t) && !/kg|人気|倍/.test(s.t) && !/^(タイム|オッズ|馬名|ラップ|ハロン|コーナー|ペース|レース|データ|ワイド|ワイ|トリプル|マイ)/.test(s.t))
       .sort((a, b) => a.x0 - b.x0);
@@ -264,7 +262,9 @@
       const WRE = /(^|[^\d.])(\d{3})\s*(kg)?\s*\(\s*([+\-−]?\d{1,2}|前計不|計不)\s*\)/i;
       const wt = band.find(s => WRE.test(s.t)) || band.find(s => /\d{3}\s*kg/i.test(s.t) && s.x0 < w * 0.6);
       const wtRes = wt && WRE.test(wt.t);
-      if (!time && !wtRes) return; // 結果の行ではない（パドック映像のテロップなど）
+      const sexSeg = band.find(s => /^(牡|牝|セ|騸)\s*\d{1,2}$/.test(s.t) || /^(牡|牝|セ|騸)\d/.test(s.t));
+      if (mode === "card") { if (!sexSeg && !wtRes) return; } // 出馬表の行：性齢（または馬体重）がある行
+      else if (!time && !wtRes) return; // 結果の行ではない（パドック映像のテロップなど）
       const r = { name: (nfkc(nm.t).match(/[ァ-ヺー]{2,}/g) || []).sort((a, b) => b.length - a.length)[0] };
       if (tm) r.time = (+tm[1]) * 60 + (+tm[2]) + (+tm[3]) / 10; // 走破タイム（秒）
       if (wt) { const m = WRE.exec(wt.t) || /()(\d{3})\s*kg/i.exec(wt.t); if (+m[2] >= 300 && +m[2] <= 700) r.weight = m[2]; }
@@ -273,14 +273,16 @@
       const cols = []; nums.forEach(s => { const c = cols.find(c => Math.abs(c.cx - s.cx) < s.h * 0.8); if (!c) cols.push({ cx: s.cx, segs: [s] }); else c.segs.push(s); });
       cols.sort((a, b) => a.cx - b.cx);
       const pick = c => c && c.segs.sort((a, b) => a.cy - b.cy)[0].t;
-      if (cols.length >= 3) { r.finish = pick(cols[cols.length - 3]); r.umaban = pick(cols[cols.length - 1]); }
+      if (mode === "card") { if (cols.length) r.umaban = pick(cols[cols.length - 1]); } // 出馬表：左から 枠・馬番
+      else if (cols.length >= 3) { r.finish = pick(cols[cols.length - 3]); r.umaban = pick(cols[cols.length - 1]); }
       else if (cols.length === 2) {
         // 着順の列には「着」が並ぶ。なければ「枠・馬番」とみなす
         const chaku = band.find(s => /^着$|^\d{1,2}着$/.test(s.t) && Math.abs(s.cx - cols[0].cx) < s.h);
         if (chaku) { r.finish = pick(cols[0]); r.umaban = pick(cols[1]); } else r.umaban = pick(cols[1]);
       } else if (cols.length === 1) r.umaban = pick(cols[0]);
-      const fin = band.find(s => /^(\d{1,2})着$/.test(s.t)); if (!r.finish && fin) r.finish = /^(\d{1,2})/.exec(fin.t)[1];
-      const stop = band.find(s => /^(中止|除外|取消|失格)$/.test(s.t) && s.x1 <= nm.x0); if (stop) r.finish = stop.t;
+      const fin = mode !== "card" && band.find(s => /^(\d{1,2})着$/.test(s.t)); if (!r.finish && fin) r.finish = /^(\d{1,2})/.exec(fin.t)[1];
+      const stop = band.find(s => /^(中止|除外|取消|失格)$/.test(s.t) && s.x1 <= nm.x0); if (stop && mode !== "card") r.finish = stop.t;
+      if (mode === "card" && !r.umaban) return; // 出馬表は馬番が必要
       if (r.umaban && !(+r.umaban >= 1 && +r.umaban <= 18)) delete r.umaban;
       if (r.finish && /^\d+$/.test(r.finish) && !(+r.finish >= 1 && +r.finish <= 18)) delete r.finish;
       if (!r.umaban && !r.finish) return; // 着順も馬番もない行は結果の行とみなさない
@@ -305,13 +307,13 @@
     return rows;
   }
   /** images: [{words, w, h}] → { race: {...}, rows: [{umaban, name, finish, margin, weight, sex}] } */
-  function parseResultImages(images) {
+  function parseResultImages(images, mode = "result") {
     const race = {}, byKey = new Map();
     images.forEach(im => {
       const segs = toSegments(im.words || []);
       const hd = parseRaceHeader(segs, im.w, im.h);
       Object.keys(hd).forEach(k => { if (hd[k] && !race[k]) race[k] = hd[k]; });
-      parseResultRows(segs, im.w, im.h).forEach(r => {
+      parseResultRows(segs, im.w, im.h, mode).forEach(r => {
         // 同じ馬（2枚に分かれて写った行）は馬名でまとめる。馬番の読み間違いで別の馬を混ぜないため
         const key = r.name ? "n" + normName(r.name) : "u" + r.umaban;
         const old = byKey.get(key);
@@ -319,7 +321,7 @@
         else Object.keys(r).forEach(k => { if (r[k] && !old[k]) old[k] = r[k]; }); // 2枚に分かれた行は足し合わせる
       });
     });
-    const rows = [...byKey.values()].sort((a, b) => (+a.finish || 99) - (+b.finish || 99) || (+a.umaban || 99) - (+b.umaban || 99));
+    const rows = [...byKey.values()].sort((a, b) => mode === "card" ? (+a.umaban || 99) - (+b.umaban || 99) : (+a.finish || 99) - (+b.finish || 99) || (+a.umaban || 99) - (+b.umaban || 99));
     // 着差＝1着の馬とのタイム差（秒）。1着の走破タイムが読めたときだけ計算する
     const win = rows.find(x => String(x.finish) === "1" && x.time);
     rows.forEach(x => { x.diff = win && x.time ? Math.max(0, x.time - win.time).toFixed(1) : ""; x.lengths = x.margin || ""; });
