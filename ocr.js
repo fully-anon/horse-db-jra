@@ -162,16 +162,27 @@
   function parseRaceHeader(segs, w, h) {
     const out = {};
     const lines = toLines(segs.map(s => ({ description: s.t, boundingPoly: { vertices: [{ x: s.x0, y: s.y0 }, { x: s.x1, y: s.y1 }] } })))
-      .map(l => ({ text: nfkc(l.text), cy: l.cy })).sort((a, b) => a.cy - b.cy);
+      .map(l => ({ text: nfkc(l.text), cy: l.cy, items: l.items })).sort((a, b) => a.cy - b.cy);
     const spaced = toLines(segs.map(s => ({ description: s.t + " ", boundingPoly: { vertices: [{ x: s.x0, y: s.y0 }, { x: s.x1, y: s.y1 }] } })))
       .map(l => ({ text: nfkc(l.text).trim(), cy: l.cy })).sort((a, b) => a.cy - b.cy);
     const top = lines.filter(l => l.cy < h * 0.35), topS = spaced.filter(l => l.cy < h * 0.35);
     // 日付：「5/2(土)」または「10月11日(日)」。着差の「1.1/2」などは日付にしない。
     // PC版のように日付のタブが並んでいるときは、どれが選ばれているか分からないので候補として返す
     const DRES = [/(^|[^\d.])(\d{1,2})\/(\d{1,2})\s*[(（]\s*([日月火水木金土])/g, /(^|[^\d])(\d{1,2})月\s*(\d{1,2})日\s*[(（]\s*([日月火水木金土])/g];
-    const dates = [];
-    top.forEach(l => DRES.forEach(re => { re.lastIndex = 0; let m; while ((m = re.exec(l.text))) if (+m[2] >= 1 && +m[2] <= 12 && +m[3] >= 1 && +m[3] <= 31) { const d = inferDate(+m[2], +m[3], m[4]); if (!dates.includes(d)) dates.push(d); } }));
-    if (dates.length === 1) out.date = dates[0]; else if (dates.length > 1) out.dateOptions = dates;
+    const dates = [], boxes = [];
+    lines.filter(l => l.cy < h * 0.35).forEach(l => {
+      const txt = nfkc(l.items.map(i => i.t).join(""));
+      if (/(^|[^\d])\d{1,2}:\d{2}(?!\.)/.test(txt) && !/発走/.test(txt)) return; // 端末の時計（ステータスバー）の日付は使わない
+      // 文字の位置 → どの単語か、の対応を作り、日付の文字の範囲を囲む枠を出す
+      const map = []; l.items.forEach(i => { for (const ch of nfkc(i.t)) map.push(i); });
+      DRES.forEach(re => { re.lastIndex = 0; let m; while ((m = re.exec(txt))) {
+        if (!(+m[2] >= 1 && +m[2] <= 12 && +m[3] >= 1 && +m[3] <= 31)) continue;
+        const d = inferDate(+m[2], +m[3], m[4]); if (dates.includes(d)) continue;
+        const its = map.slice(m.index + m[1].length, m.index + m[0].length);
+        dates.push(d); boxes.push({ date: d, x0: Math.min(...its.map(i => i.x0)), y0: Math.min(...its.map(i => i.y0)), x1: Math.max(...its.map(i => i.x1)), y1: Math.max(...its.map(i => i.y1)) });
+      } });
+    });
+    if (dates.length === 1) out.date = dates[0]; else if (dates.length > 1) { out.dateOptions = dates; out.dateBoxes = boxes; }
     // 開催場：「4回 京都 4日目」があれば最優先（PC版は 東京・京都 のタブも並ぶため）
     const kai = lines.map(l => new RegExp("\\d+回\\s*(" + VENUES.join("|") + ")\\s*\\d+日").exec(l.text)).find(Boolean);
     if (kai) out.venue = kai[1];
@@ -289,10 +300,11 @@
     const rowGap = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0; // ふだんの行の間隔（中央値）
     names.forEach((nm, i) => {
       // 1頭分の範囲：次の馬名の手前まで。最後の行は、ふだんの行の間隔ぶんだけ（下の払戻しやラップを含めない）
-      const top = nm.y0 - nm.h * 0.5, bottom = i + 1 < names.length ? names[i + 1].y0 - names[i + 1].h * 0.5 : Math.min(h, nm.y0 - nm.h * 0.5 + (rowGap || nm.h * 6));
+      const top = nm.y0 - nm.h * 0.5, cap = rowGap ? top + rowGap * 1.6 : top + nm.h * 7;
+      const bottom = Math.min(i + 1 < names.length ? names[i + 1].y0 - names[i + 1].h * 0.5 : h, cap, h);
       const band = segs.filter(s => s.cy >= top && s.cy < bottom && s !== nm);
       const time = band.find(s => /\d:\d{2}\.\d/.test(s.t));
-      const tm = time && /(\d{1,2}):(\d{2})\.(\d)/.exec(time.t);
+      const tm = time && /(\d{1,2}):(\d{2})\.(\d)(\S*)$/.exec(time.t);
       // 馬体重：「496kg(-6)」（スマホ版）または「478(-2)」（PC版、表の右端）
       const WRE = /(^|[^\d.])(\d{3})\s*(kg)?\s*\(\s*([+\-−]?\d{1,2}|前計不|計不)\s*\)/i;
       const wt = band.find(s => WRE.test(s.t)) || band.find(s => /\d{3}\s*kg/i.test(s.t) && s.x0 < w * 0.6);
@@ -323,7 +335,7 @@
       nums.sort((a, b) => a.cx - b.cx);
       const cols = []; nums.forEach(s => { const c = cols.find(c => Math.abs(c.cx - s.cx) < s.h * 0.8); if (!c) cols.push({ cx: s.cx, segs: [s] }); else c.segs.push(s); });
       cols.sort((a, b) => a.cx - b.cx);
-      const pick = c => c && c.segs.sort((a, b) => a.cy - b.cy)[0].t;
+      const pick = c => { if (!c) return undefined; const ok = c.segs.filter(s => +s.t >= 1 && +s.t <= 18); return (ok.length ? ok : c.segs).sort((a, b) => a.cy - b.cy)[0].t; };
       if (mode === "card") { if (cols.length) r.umaban = pick(cols[cols.length - 1]); } // 出馬表：左から 枠・馬番
       else if (cols.length >= 3) { r.finish = pick(cols[cols.length - 3]); r.umaban = pick(cols[cols.length - 1]); }
       else if (cols.length === 2) {
@@ -350,6 +362,7 @@
         r.margin = mg.length ? mg[0].t.replace(/^大$/, "大差") : "";
         r.hasTime = true;
       }
+      if (tm && tm[4] && !r.margin && MARGIN.test(tm[4])) r.margin = tm[4]; // タイムと着差がくっついて読まれた場合
       // 性齢「牡4」「セ4」
       const sx = sexSeg;
       if (sx) r.sex = { "牡": "牡", "牝": "牝", "セ": "セン", "騸": "セン" }[sx.t[0]];
@@ -363,6 +376,7 @@
     images.forEach(im => {
       const segs = toSegments(im.words || []);
       const hd = parseRaceHeader(segs, im.w, im.h);
+      if (hd.dateBoxes) hd.dateBoxes.forEach(b => { b.img = images.indexOf(im); });
       Object.keys(hd).forEach(k => { if (hd[k] && !race[k]) race[k] = hd[k]; });
       parseResultRows(segs, im.w, im.h, mode).forEach(r => {
         // 同じ馬（2枚に分かれて写った行）は馬名でまとめる。馬番の読み間違いで別の馬を混ぜないため

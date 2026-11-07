@@ -104,6 +104,7 @@ legend{font-size:13px;color:var(--muted);font-weight:700;padding:0 4px}
 .dbg{margin-top:6px}
 .dbg summary{cursor:pointer;color:var(--muted);font-size:13px;font-weight:700;padding:6px 0}
 .dbg[open]{display:flex;flex-direction:column;gap:8px}
+.guess{font-size:11px;font-weight:700;color:var(--ok);background:var(--panel);border-radius:999px;padding:1px 7px;margin-left:4px}
 .miss{font-size:11px;font-weight:700;color:var(--warn);background:var(--warn-bg);border-radius:999px;padding:1px 7px;margin-left:4px}
 .rf{margin-top:4px}
 .card-table.rc input.xs{max-width:76px}

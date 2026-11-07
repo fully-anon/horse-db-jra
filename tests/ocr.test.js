@@ -20,6 +20,16 @@ for (const f of ["netkeiba-pc-result-1.json", "netkeiba-pc-result-2.json"]) {
   eq(f + " ラップ", r.race.lap, WANT_LAP);
   eq(f + " 出馬表として読んでも17頭", P.parseResultImages(fx(f), "card").rows.length, 17);
 }
+// スマホで撮ったPC版（上端に端末の時計の日付、下にメモ欄がある）
+{
+  const f = "netkeiba-pc-result-3-iphone.json", r = P.parseResultImages(fx(f), "result");
+  eq(f + " レース", [r.race.venue, r.race.raceNo, r.race.raceName, r.race.cls, r.race.surface, r.race.distance, r.race.going], ["京都", "10", "三年坂S", "3勝", "芝", "1600", "良"]);
+  eq(f + " 端末の時計の日付（11/7）を候補に入れない", r.race.dateOptions, ["2026-10-03", "2026-10-04", "2026-10-10", "2026-10-11", "2026-10-12"]);
+  eq(f + " 日付タブの位置（10/11）", r.race.dateBoxes.find(b => b.date === "2026-10-11").x0, 471);
+  eq(f + " 着順/馬番", r.rows.map(x => x.finish + "/" + x.umaban).join(" "), WANT_FIN);
+  eq(f + " 15着ノクナレアの着差（タイムとくっついた「33.12」）", r.rows[14].margin, "2");
+  eq(f + " ラップ", r.race.lap, WANT_LAP);
+}
 // 名寄せ：読み違い（トミーバローズ）を登録済みの馬の候補に出す
 eq("名寄せ 長音の抜け・濁点", P.matchHorse("トミーバローズ", [{ id: 1, name: "トーミーパローズ" }]).candidates.length, 1);
 eq("名寄せ 別の馬は候補にしない", P.matchHorse("アヴィオン", [{ id: 1, name: "トーミーパローズ" }]).candidates.length, 0);

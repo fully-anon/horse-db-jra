@@ -397,6 +397,32 @@
   // mode: "card"＝出馬表（レース前）、"result"＝レース結果（レース後）
   const CARD_KEYS = ["date", "venue", "raceNo", "raceName", "cls", "surface", "distance"];
   const RESULT_ONLY = ["going", "lap"];
+  // 日付のタブが複数あるとき：背景が白く強調されたタブを、画像の色から選ぶ
+  async function guessDateByColor(race, imgs) {
+    if (!race.dateBoxes || race.dateBoxes.length < 2) return;
+    const cache = {};
+    const pixels = async i => {
+      if (cache[i]) return cache[i];
+      const im = imgs[i]; const bmp = await new Promise((res, rej) => { const x = new Image(); x.onload = () => res(x); x.onerror = rej; x.src = im.url; });
+      const c = document.createElement("canvas"); c.width = im.w; c.height = im.h;
+      const cx = c.getContext("2d", { willReadFrequently: true }); cx.drawImage(bmp, 0, 0, im.w, im.h);
+      return (cache[i] = { data: cx.getImageData(0, 0, im.w, im.h).data, w: im.w, h: im.h });
+    };
+    const scores = [];
+    for (const b of race.dateBoxes) {
+      const px = await pixels(b.img), hh = b.y1 - b.y0;
+      // 日付の文字のまわり（タブの中）を調べる。文字の線より背景の方が多いので、明るい方から3割の値を背景の明るさとする
+      const x0 = Math.max(0, Math.round(b.x0 - hh * 0.4)), x1 = Math.min(px.w - 1, Math.round(b.x1 + hh * 0.4));
+      const y0 = Math.max(0, Math.round(b.y0 - hh * 0.15)), y1 = Math.min(px.h - 1, Math.round(b.y1 + hh * 0.15));
+      const lum = [];
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const k = (y * px.w + x) * 4; lum.push(0.299 * px.data[k] + 0.587 * px.data[k + 1] + 0.114 * px.data[k + 2]); }
+      lum.sort((a, b) => a - b);
+      scores.push({ date: b.date, v: lum[Math.floor(lum.length * 0.7)] || 0 });
+    }
+    scores.sort((a, b) => b.v - a.v);
+    if (scores[0].v - scores[1].v >= 6) race.dateGuess = scores[0].date; // いちばん白いタブが、他よりはっきり明るいときだけ
+  }
+
   function mountImporter(box, fixedRace, mode = "result", keepImgs = []) {
     const isCard = mode === "card";
     const FIELDS = isCard ? RES_FIELDS.filter(([k]) => CARD_KEYS.includes(k)) : RES_FIELDS;
@@ -444,7 +470,9 @@
         got.push({ words: o.words, w: im.w, h: im.h });
       }
       lastOCR = got.map(g => ({ w: g.w, h: g.h, words: (g.words || []).map(x => { const v = (x.boundingPoly && x.boundingPoly.vertices) || []; const xs = v.map(p => p.x || 0), ys = v.map(p => p.y || 0); return [x.description, Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; }) }));
-      showConfirm(parseResultImages(got, mode));
+      const parsed = parseResultImages(got, mode);
+      try { await guessDateByColor(parsed.race, imgs); } catch (e) { /* 判定できなければ選んでもらう */ }
+      showConfirm(parsed);
     });
 
     function showConfirm(res) {
@@ -454,7 +482,7 @@
       const val = k => (!isCard && fixedRace && !RESULT_ONLY.includes(k)) ? (base[k] || rr[k] || "") : (rr[k] || base[k] || "");
       const fieldInput = (k) => {
         const v = val(k), id = "iv_" + k;
-        if (k === "date" && !rr.date && rr.dateOptions) return `<select id="${id}"><option value="">日付のタブが複数写っています。選んでください</option>${rr.dateOptions.map(d => `<option ${d === base.date ? "selected" : ""}>${esc(d)}</option>`).join("")}</select>`;
+        if (k === "date" && !rr.date && rr.dateOptions) { const pre = rr.dateGuess || base.date; return `<select id="${id}"><option value="">日付のタブが複数写っています。選んでください</option>${rr.dateOptions.map(d => `<option ${d === pre ? "selected" : ""}>${esc(d)}</option>`).join("")}</select>`; }
         if (k === "date") return `<input type="date" id="${id}" value="${esc(v)}">`;
         if (k === "venue") return `<input type="text" id="${id}" list="venues" value="${esc(v)}">`;
         if (k === "cls") return `<select id="${id}">${opts(CLASSES, v)}</select>`;
@@ -469,7 +497,7 @@
         ${!rows.length && !FIELDS.some(([k]) => rr[k]) ? banner(isCard ? "画像から出馬表を読み取れませんでした。出馬表のスクリーンショットか、文字が小さすぎないかを確認してください" : "画像から結果を読み取れませんでした。結果ページのスクリーンショットか、文字が小さすぎないかを確認してください") : ""}
         ${!rows.length && FIELDS.some(([k]) => rr[k]) ? banner(isCard ? "馬の一覧を読み取れませんでした。結果のスクリーンショットなら「結果（レース後）」に切り替えてください" : "着順の一覧を読み取れませんでした。出馬表のスクリーンショットなら「出馬表（レース前）」に切り替えてください") : ""}
         <h3 class="sub3">レース情報</h3>
-        <div class="grid form rf">${FIELDS.map(([k, l]) => k === "lap" ? `<div class="span2 lapfield"><span class="lbl">${l}（距離ごと） ${read(k)}</span>${fieldInput(k)}</div>` : `<label class="${k === "raceName" ? "span2" : ""}">${l} ${k === "date" && rr.dateOptions && !rr.date ? `<span class="miss">選んでください</span>` : read(k)}${fieldInput(k)}</label>`).join("")}</div>
+        <div class="grid form rf">${FIELDS.map(([k, l]) => k === "lap" ? `<div class="span2 lapfield"><span class="lbl">${l}（距離ごと） ${read(k)}</span>${fieldInput(k)}</div>` : `<label class="${k === "raceName" ? "span2" : ""}">${l} ${k === "date" && rr.dateOptions && !rr.date ? (rr.dateGuess ? `<span class="guess">白いタブの日付を選びました・確認してください</span>` : `<span class="miss">選んでください</span>`) : read(k)}${fieldInput(k)}</label>`).join("")}</div>
         <div id="iTarget"></div>
         ${rows.length ? `<h3 class="sub3">${isCard ? "出走馬" : "結果"}（${rows.length}頭）</h3>
           ${!isCard && !res.winTime ? banner("1着の馬の走破タイムが読み取れなかったため、着差（1着とのタイム差）を計算できませんでした。1着の行が写った画像を加えるか、手で入力してください。") : ""}
@@ -860,7 +888,7 @@ ${JSON.stringify(data, null, 1)}`;
 
   /* ================= 起動 ================= */
   // 新しい版が公開されていたら1回だけ自動で読み込み直す（古いファイルが残る対策）
-  const APP_VERSION = "15";
+  const APP_VERSION = "16";
   async function checkUpdate() {
     if (!/github\.io$/.test(location.hostname)) return false;
     try {
