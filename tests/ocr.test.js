@@ -75,4 +75,11 @@ console.log(fail ? `\n${fail}件 失敗` : "\nすべて成功");
   eq(f + " 着順/馬番", r.rows.map(x => x.finish + "/" + x.umaban).join(" "), "1/5 2/7 2/10 4/12 5/13 6/1 7/4 8/6 9/16 10/2 11/3 12/18 13/11 14/9 15/15 16/14 17/8 18/17");
   eq(f + " 同着", r.rows[2].margin, "同着");
 }
+// 結果6件目：6着の「6」の上に「19」が重なって読まれた（つなげて「196」にしない）
+{
+  const f = "netkeiba-pc-result-6-iphone.json", r = P.parseResultImages(fx(f), "result");
+  eq(f + " レース", [r.race.venue, r.race.raceNo, r.race.cls, r.race.surface, r.race.distance, r.race.going], ["阪神", "8", "1勝", "芝", "1400", "稍重"]);
+  eq(f + " 着順/馬番", r.rows.map(x => x.finish + "/" + x.umaban).join(" "), "1/14 2/6 3/1 4/7 5/5 6/12 7/16 8/3 9/18 10/17 11/13 12/2 13/10 14/4 15/9 16/15 17/8 18/11");
+  eq(f + " 着差（2着・18着）", [r.rows[1].diff, r.rows[17].diff], ["0.2", "2.3"]);
+}
 process.exit(fail ? 1 : 0);

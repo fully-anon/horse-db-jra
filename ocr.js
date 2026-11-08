@@ -9,7 +9,7 @@
       const v = (w.boundingPoly && w.boundingPoly.vertices) || [];
       const xs = v.map(p => p.x || 0), ys = v.map(p => p.y || 0);
       const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-      return { t: w.description || "", x0, x1, y0, y1, cy: (y0 + y1) / 2, h: Math.max(1, y1 - y0) };
+      return { t: w.description || "", x0, x1, y0, y1, cy: (y0 + y1) / 2, h: Math.max(1, y1 - y0), split: !!w.split };
     }).filter(i => i.t && isFinite(i.x0));
     items.sort((a, b) => a.cy - b.cy);
     // 何行ぶんもある縦長の文字（「++++」「567」など）で、別の行どうしがつながらないよう、行の高さは「ふつうの文字の高さ」の1.6倍までとして判定する
@@ -160,9 +160,11 @@
         // 数字と日本語の境目（「11フェアリーライク」「55.0坂井」など）は、すき間がごく小さくないかぎり分ける
         const a = cur && cur.t.slice(-1), b = it.t[0], gap = cur ? it.x0 - cur.x1 : 0, hh = cur ? Math.max(cur.h, it.h) : 0;
         const kindChange = cur && (/[\d.]/.test(a) && /[ぁ-んァ-ヺ一-龯]/.test(b) || /[ぁ-んァ-ヺ一-龯]/.test(a) && /\d/.test(b));
-        if (cur && gap < hh * (kindChange ? 0.08 : 0.35)) {
+        // 同じ場所に重なって読まれた2つの数字（「6」の上に「19」など）はつなげない
+        const overlap = cur && !cur.split && !it.split && /^\d+$/.test(cur.t) && /^\d+$/.test(it.t) && -gap > 0.5 * Math.min(cur.x1 - cur.x0, it.x1 - it.x0);
+        if (cur && !overlap && gap < hh * (kindChange ? 0.08 : 0.35)) {
           cur.t += it.t; cur.x1 = Math.max(cur.x1, it.x1); cur.y0 = Math.min(cur.y0, it.y0); cur.y1 = Math.max(cur.y1, it.y1); cur.h = cur.y1 - cur.y0;
-        } else { if (cur) segs.push(cur); cur = { t: it.t, x0: it.x0, x1: it.x1, y0: it.y0, y1: it.y1, h: it.h }; }
+        } else { if (cur) segs.push(cur); cur = { t: it.t, x0: it.x0, x1: it.x1, y0: it.y0, y1: it.y1, h: it.h, split: it.split }; }
       });
       if (cur) segs.push(cur);
     });
