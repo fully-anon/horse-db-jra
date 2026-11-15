@@ -82,4 +82,12 @@ console.log(fail ? `\n${fail}件 失敗` : "\nすべて成功");
   eq(f + " 着順/馬番", r.rows.map(x => x.finish + "/" + x.umaban).join(" "), "1/14 2/6 3/1 4/7 5/5 6/12 7/16 8/3 9/18 10/17 11/13 12/2 13/10 14/4 15/9 16/15 17/8 18/11");
   eq(f + " 着差（2着・18着）", [r.rows[1].diff, r.rows[17].diff], ["0.2", "2.3"]);
 }
+// 仮の出馬表（枠順確定前・馬番が「--」）：馬番なしで16頭。曜日のない日付タブ「11/14 11/15 …」
+{
+  const f = "netkeiba-pc-card-4-provisional.json", r = P.parseResultImages(fx(f), "card");
+  eq(f + " レース", [r.race.venue, r.race.raceNo, r.race.raceName, r.race.cls, r.race.surface, r.race.distance], ["京都", "9", "花見小路特別", "2勝", "芝", "1600"]);
+  eq(f + " 日付タブ", r.race.dateOptions && r.race.dateOptions.map(d => d.slice(5)), ["11-14", "11-15", "11-21", "11-22", "11-23", "11-29"]);
+  eq(f + " 馬名と性別（馬番なし）", r.rows.map(x => (x.umaban || "-") + ":" + x.name + x.sex).join(" "),
+    "-:アイガーリー牡 -:オックスアイ牡 -:カウンティフェア牝 -:カクウチ牡 -:グラフィティアートセン -:ジャズ牡 -:シャンパンライフ牝 -:タナブイハチターボ牡 -:テイエムスティール牝 -:ネッタイヤライ牡 -:バガン牡 -:バルセシート牡 -:ペルフェツィオーネ牡 -:モアニ牝 -:ランドプリメーロ牡 -:リカントロポ牡");
+}
 process.exit(fail ? 1 : 0);

@@ -145,10 +145,10 @@
       const dup = keep.find(k => { const c = box(k); if (nfkc(c.t) !== nfkc(a.t)) return false; const ix = Math.min(a.x1, c.x1) - Math.max(a.x0, c.x0), iy = Math.min(a.y1, c.y1) - Math.max(a.y0, c.y0); return ix > 0 && iy > 0 && ix * iy > 0.5 * Math.min((a.x1 - a.x0) * (a.y1 - a.y0), (c.x1 - c.x0) * (c.y1 - c.y0)); });
       if (!dup) keep.push(w);
     });
-    // 数字に重なって出てくる英字のゴミ（着順の「4」に重なった「st」など）は捨てる
+    // 数字や文字に重なって出てくる英字のゴミ（着順の「4」に重なった「st」、性別の「牝」に重なった「FA」など）は捨てる
     return keep.filter(w => {
       const a = box(w); if (!/^[A-Za-z]{1,3}$/.test(nfkc(a.t))) return true;
-      return !keep.some(k => { if (k === w) return false; const c = box(k); if (!/^\d{1,3}$/.test(nfkc(c.t))) return false; const ix = Math.min(a.x1, c.x1) - Math.max(a.x0, c.x0), iy = Math.min(a.y1, c.y1) - Math.max(a.y0, c.y0); return ix > 0 && iy > 0 && ix * iy > 0.5 * (a.x1 - a.x0) * (a.y1 - a.y0); });
+      return !keep.some(k => { if (k === w) return false; const c = box(k); if (!/^(\d{1,3}|[ぁ-んァ-ヺ一-龯]+)$/.test(nfkc(c.t))) return false; const ix = Math.min(a.x1, c.x1) - Math.max(a.x0, c.x0), iy = Math.min(a.y1, c.y1) - Math.max(a.y0, c.y0); return ix > 0 && iy > 0 && ix * iy > 0.5 * Math.min((a.x1 - a.x0) * (a.y1 - a.y0), (c.x1 - c.x0) * (c.y1 - c.y0)); });
     });
   }
   function toSegments(words) {
@@ -216,6 +216,13 @@
         const its = map.slice(m.index + m[1].length, m.index + m[0].length);
         dates.push(d); boxes.push({ date: d, x0: Math.min(...its.map(i => i.x0)), y0: Math.min(...its.map(i => i.y0)), x1: Math.max(...its.map(i => i.x1)), y1: Math.max(...its.map(i => i.y1)) });
       } });
+    });
+    // 曜日のない日付タブ「11/14 11/15 11/21 …」（3つ以上並んでいるときだけ。着差の「1/2」などと区別するため）
+    if (!dates.length) lines.filter(l => l.cy < h * 0.35).forEach(l => {
+      const tabs = l.items.filter(i => /^\d{1,2}\/\d{1,2}$/.test(nfkc(i.t)));
+      if (tabs.length < 3) return;
+      tabs.forEach(i => { const [mo, d] = nfkc(i.t).split("/").map(Number); if (!(mo >= 1 && mo <= 12 && d >= 1 && d <= 31)) return;
+        const dt = inferDate(mo, d); if (dates.includes(dt)) return; dates.push(dt); boxes.push({ date: dt, x0: i.x0, y0: i.y0, x1: i.x1, y1: i.y1 }); });
     });
     const full = lines.map(l => /(20\d{2})年\s*(\d{1,2})月\s*(\d{1,2})日/.exec(l.text)).find(Boolean);
     if (full && +full[2] >= 1 && +full[2] <= 12 && +full[3] >= 1 && +full[3] <= 31) out.date = `${full[1]}-${String(+full[2]).padStart(2, "0")}-${String(+full[3]).padStart(2, "0")}`;
@@ -396,8 +403,8 @@
       cols.sort((a, b) => a.cx - b.cx);
       const pick = c => { if (!c) return undefined; const ok = c.segs.filter(s => +s.t >= 1 && +s.t <= 18); return (ok.length ? ok : c.segs).sort((a, b) => a.cy - b.cy)[0].t; };
       if (mode === "card") { // 出馬表：左から 枠・馬番。馬番の列の位置が分かっていれば、その列の数字だけを使う
+        // 馬番の列がない表は、枠順が決まる前の「仮の出馬表」（馬番は「--」）。馬番なしで読む
         if (umaCol) { const c = cols.find(c => Math.abs(c.cx - umaCol.cx) < Math.max(umaCol.h, 12) * 0.9); if (c) r.umaban = pick(c); }
-        else if (cols.length) r.umaban = pick(cols[cols.length - 1]);
       }
       else if (cols.length >= 3) { r.finish = pick(cols[cols.length - 3]); r.umaban = pick(cols[cols.length - 1]); }
       else if (cols.length === 2) {
@@ -407,10 +414,10 @@
       } else if (cols.length === 1) r.umaban = pick(cols[0]);
       const fin = mode !== "card" && band.find(s => /^(\d{1,2})着$/.test(s.t)); if (!r.finish && fin) r.finish = /^(\d{1,2})/.exec(fin.t)[1];
       const stop = band.find(s => /^(中止|除外|取消|失格)$/.test(s.t) && s.x1 <= nm.x0); if (stop && mode !== "card") r.finish = stop.t;
-      if (mode === "card" && !r.umaban) return; // 出馬表は馬番が必要
+      if (mode === "card" && !r.umaban && umaCol) return; // 枠順が決まった出馬表は馬番が必要
       if (r.umaban && !(+r.umaban >= 1 && +r.umaban <= 18)) delete r.umaban;
       if (r.finish && /^\d+$/.test(r.finish) && !(+r.finish >= 1 && +r.finish <= 18)) delete r.finish;
-      if (!r.umaban && !r.finish) return; // 着順も馬番もない行は結果の行とみなさない
+      if (!r.umaban && !r.finish && !(mode === "card" && !umaCol)) return; // 着順も馬番もない行は結果の行とみなさない（仮の出馬表は除く）
       // 着差：PC版は「着差」の列、スマホ版はタイムの真下（上がり3F「(36.0)」より上）
       if (hdr && time) {
         const mg = band.filter(s => Math.abs(s.cx - hdr.cx) < hdrHalf && MARGIN.test(s.t)).sort((a, b) => Math.abs(a.cx - hdr.cx) - Math.abs(b.cx - hdr.cx));

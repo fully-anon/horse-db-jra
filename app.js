@@ -221,13 +221,17 @@
     const r = race(id); if (!r) { main().innerHTML = banner("レースが見つかりません"); return; }
     const ents = entriesOfRace(id);
     const hasRes = ents.some(e => e.finish); // 結果を登録済みなら着順・着差を表示
+    const provisional = ents.length && !hasRes && ents.every(e => !e.umaban); // 枠順が決まる前の仮の出馬表
+    const noNum = !provisional && !hasRes ? ents.filter(e => !e.umaban) : []; // 確定した出馬表にいなかった馬（回避・除外など）
     const an = parseJSON(r.analysis, null);
     const overall = e => an ? an.patterns.reduce((s, p) => s + (p.probability / 100) * ((p.rates[e.id] || 0) / 100), 0) : 0;
     const pct = v => (v * 100).toFixed(1) + "%";
     main().innerHTML = `
-      <div class="head"><div><p class="eyebrow">出馬表</p><h1>${esc(raceTitle(r))}</h1><p class="sub">${esc(raceCond(r) || "条件未入力")}</p></div>
+      <div class="head"><div><p class="eyebrow">${provisional ? '出馬表 <span class="pill warn">仮・枠順未確定</span>' : "出馬表"}</p><h1>${esc(raceTitle(r))}</h1><p class="sub">${esc(raceCond(r) || "条件未入力")}</p></div>
         <div class="row"><button class="btn" id="editRace">レース条件を編集</button><button class="btn danger" id="delRace">レースを削除</button></div></div>
       <div id="delRaceBox"></div>
+      ${noNum.length ? banner(`馬番が入っていない馬が${noNum.length}頭います（${noNum.map(e => esc((horse(e.horseId) || {}).name || "")).join("、")}）。確定した出馬表にいなかった馬（回避・除外など）なら、「記録・パドック」から削除してください。`) : ""}
+      ${provisional ? banner("枠順が決まる前の仮の出馬表です。枠順が決まったら、下の「出馬表（レース前）」で確定した出馬表の画像を読み取ると、馬番が入ります。") : ""}
       ${r.lap ? `<section class="lapsec"><h2 class="sub3">ラップ</h2>${lapTable(r.lap, r.distance)}</section>` : ""}
       <section class="card" id="raceEdit" hidden>${raceForm(r)}<div class="row"><button class="btn primary" id="saveRace">保存</button></div></section>
       ${an ? `<section class="patterns">${an.patterns.map((p, i) => `<div class="pat"><span class="pnum">展開${i + 1}</span><b>${esc(p.name)}</b><span class="prob">${p.probability.toFixed(1)}%</span><p>${esc(p.summary)}</p></div>`).join("")}<p class="muted">分析日時 ${esc(r.analyzedAt)}。基準オッズ＝この単勝オッズを超えれば回収率100%超え</p></section>` : ""}
@@ -347,7 +351,7 @@
     drawPick();
 
     // ---- 結果のスクリーンショットから読み取り（共通の処理） ----
-    mountImporter($("#resCard"), r, ents.length ? "result" : "card");
+    mountImporter($("#resCard"), r, ents.length && !provisional ? "result" : "card");
 
     $("#manualBox").addEventListener("toggle", e => { manualOpen = e.target.open; });
     // 予想：表の中で書いて、欄から離れたら保存（出走記録の「予想」と同じもの）
@@ -508,6 +512,7 @@
       $("#resOut").innerHTML = `
         ${!rows.length && !FIELDS.some(([k]) => rr[k]) ? banner(isCard ? "画像から出馬表を読み取れませんでした。出馬表のスクリーンショットか、文字が小さすぎないかを確認してください" : "画像から結果を読み取れませんでした。結果ページのスクリーンショットか、文字が小さすぎないかを確認してください") : ""}
         ${!rows.length && FIELDS.some(([k]) => rr[k]) ? banner(isCard ? "馬の一覧を読み取れませんでした。結果のスクリーンショットなら「結果（レース後）」に切り替えてください" : "着順の一覧を読み取れませんでした。出馬表のスクリーンショットなら「出馬表（レース前）」に切り替えてください") : ""}
+        ${isCard && rows.length && rows.every(x => !x.umaban) ? banner("馬番がない出馬表（枠順確定前）なので、仮の出馬表として登録します。枠順が決まったら、確定した出馬表の画像をこのレースで読み取ると、登録済みの馬に馬番が入ります。") : ""}
         <h3 class="sub3">レース情報</h3>
         <div class="grid form rf">${FIELDS.map(([k, l]) => k === "lap" ? `<div class="span2 lapfield"><span class="lbl">${l}（距離ごと） ${read(k)}</span>${fieldInput(k)}</div>` : `<label class="${k === "raceName" ? "span2" : ""}">${l} ${k === "date" && rr.dateOptions && !rr.date ? (rr.dateGuess ? `<span class="guess">白いタブの日付を選びました・確認してください</span>` : `<span class="miss">選んでください</span>`) : read(k)}${fieldInput(k)}</label>`).join("")}</div>
         <div id="iTarget"></div>
@@ -900,7 +905,7 @@ ${JSON.stringify(data, null, 1)}`;
 
   /* ================= 起動 ================= */
   // 新しい版が公開されていたら1回だけ自動で読み込み直す（古いファイルが残る対策）
-  const APP_VERSION = "23";
+  const APP_VERSION = "24";
   async function checkUpdate() {
     if (!/github\.io$/.test(location.hostname)) return false;
     try {
