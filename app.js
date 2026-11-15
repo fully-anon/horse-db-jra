@@ -889,7 +889,7 @@ ${JSON.stringify(data, null, 1)}`;
       <section class="card"><h2>データの保存先</h2>
         ${demo ? `<p><b class="pill">デモモード</b> データはこのブラウザの中にだけ保存されています。Googleの準備ができたら、設定ファイルにクライアントIDを入れると本番モードになります。</p>
           <div class="row"><button class="btn danger" id="resetDemo">デモのデータをすべて消す</button></div><div id="resetBox"></div>`
-        : `<p>Googleドライブの「${esc(window.APP_CONFIG.appName)}」フォルダに保存しています。ログインの残り時間：約${Auth.minutesLeft()}分</p>
+        : `<p>Googleドライブの「${esc(window.APP_CONFIG.appName)}」フォルダに保存しています。ログインは最長5時間（残り約${Math.floor(Auth.sessionMinutesLeft() / 60)}時間${Auth.sessionMinutesLeft() % 60}分）。Googleの決まりで1時間ごとに更新が必要なため、画面を触ったときに自動で更新します（Googleの小さな画面が一瞬開くことがあります）</p>
           <div class="row">${B.sheetURL() ? `<a class="btn" href="${esc(B.sheetURL())}" target="_blank" rel="noopener">スプレッドシートを開く</a>` : ""}<button class="btn" id="logout">ログアウト</button></div>`}
       </section>
       <section class="card"><h2>このアプリについて</h2><p class="muted">競走馬DB 版 ${APP_VERSION}。馬 ${D.horses.length}頭・レース ${D.races.length}件・出走 ${D.entries.length}件</p></section>`;
@@ -905,7 +905,7 @@ ${JSON.stringify(data, null, 1)}`;
 
   /* ================= 起動 ================= */
   // 新しい版が公開されていたら1回だけ自動で読み込み直す（古いファイルが残る対策）
-  const APP_VERSION = "24";
+  const APP_VERSION = "25";
   async function checkUpdate() {
     if (!/github\.io$/.test(location.hostname)) return false;
     try {
@@ -932,6 +932,9 @@ ${JSON.stringify(data, null, 1)}`;
         $("#login").onclick = () => Auth.login(location.hash || "#/");
         return;
       }
+      Auth.loadHint();
+      // ログインの自動更新：画面を触ったときに、必要なら裏でトークンを更新する（ログインから最長5時間）
+      document.addEventListener("click", () => { if (Auth.needsRenew()) Auth.renew(); }, true);
     }
     main().innerHTML = `<p class="loading">データを読み込んでいます…</p>`;
     try {
@@ -942,7 +945,7 @@ ${JSON.stringify(data, null, 1)}`;
       main().innerHTML = banner(esc(e.message || "読み込みに失敗しました") + ` <button class="btn" onclick="location.reload()">再読み込み</button>`, "error"); return;
     }
     ready = true; render();
-    if (!demo) setInterval(() => { const m = Auth.minutesLeft(); const el = $("#session"); if (el) { el.hidden = m > 5; el.textContent = m > 0 ? `ログイン残り${m}分` : "ログイン期限切れ"; } }, 30000);
+    if (!demo) setInterval(() => { const m = Auth.minutesLeft(); const el = $("#session"); if (el) { const s = Auth.sessionMinutesLeft(); el.hidden = m > 5 || (m > 0 && s - m > 2 && window.google); el.textContent = m > 0 ? `ログイン残り${m}分` : (s > 2 ? "画面を触るとログインを更新します" : "ログイン期限切れ"); } }, 30000);
   }
   window.App = { toast };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot); else boot();

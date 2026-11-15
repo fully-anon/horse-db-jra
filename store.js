@@ -125,15 +125,26 @@
 
   /* ================= Google（スプレッドシート＋ドライブ） ================= */
   const SCOPE = "https://www.googleapis.com/auth/drive.file";
+  // Googleのアクセストークンは1時間で切れる（Google側の決まりで変えられない）。
+  // そのため、ログインから最長5時間までは、画面を触ったときに裏で自動的に更新する
+  const SESSION_HOURS = 5;
+  const ss = { get: k => { try { return sessionStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { sessionStorage.setItem(k, v); } catch (e) { /* noop */ } }, del: k => { try { sessionStorage.removeItem(k); } catch (e) { /* noop */ } } };
   const Auth = {
-    token: null, exp: 0,
+    token: null, exp: 0, loginAt: 0, pending: null,
+    limitAt() { return this.loginAt ? this.loginAt + SESSION_HOURS * 3600000 : 0; },
+    setToken(t, sec) {
+      this.token = t; this.exp = Math.min(Date.now() + (sec || 3600) * 1000, this.limitAt() || Infinity);
+      ss.set("horsedb-token", t); ss.set("horsedb-exp", String(this.exp));
+    },
     redirectURI() { return location.origin + location.pathname.replace(/index\.html$/, ""); },
     // ログイン後に戻ってきたとき、URLの#からトークンを取り出す
     consumeRedirect() {
       const h = location.hash;
       if (!/access_token=/.test(h)) {
         if (/error=/.test(h)) { history.replaceState(null, "", location.pathname + "#/"); return "error"; }
-        try { const t = sessionStorage.getItem("horsedb-token"); const e = +sessionStorage.getItem("horsedb-exp"); if (t && e > Date.now() + 60000) { this.token = t; this.exp = e; } } catch (e) { /* noop */ }
+        this.loginAt = +ss.get("horsedb-loginAt") || 0;
+        const t = ss.get("horsedb-token"), e = +ss.get("horsedb-exp");
+        if (t && e > Date.now() + 60000) { this.token = t; this.exp = e; if (!this.loginAt) { this.loginAt = Date.now(); ss.set("horsedb-loginAt", String(this.loginAt)); } }
         return null;
       }
       const p = new URLSearchParams(h.slice(1));
@@ -141,10 +152,10 @@
       let expected = ""; try { expected = sessionStorage.getItem("horsedb-state") || ""; } catch (e) { /* noop */ }
       let back = "#/";
       if (state && state === expected.split("|")[0]) {
-        this.token = p.get("access_token"); this.exp = Date.now() + (+p.get("expires_in") || 3600) * 1000;
         back = expected.split("|")[1] || "#/";
-        // 同じタブ内だけで保持（タブやアプリを閉じれば消える）
-        try { sessionStorage.setItem("horsedb-token", this.token); sessionStorage.setItem("horsedb-exp", String(this.exp)); } catch (e) { /* noop */ }
+        // 同じタブ内だけで保持（タブやアプリを閉じれば消える）。ここから5時間を数える
+        this.loginAt = Date.now(); ss.set("horsedb-loginAt", String(this.loginAt));
+        this.setToken(p.get("access_token"), +p.get("expires_in") || 3600);
       }
       try { sessionStorage.removeItem("horsedb-state"); } catch (e) { /* noop */ }
       history.replaceState(null, "", location.pathname + back);
@@ -152,6 +163,33 @@
     },
     valid() { return this.token && this.exp > Date.now() + 30000; },
     minutesLeft() { return this.token ? Math.max(0, Math.round((this.exp - Date.now()) / 60000)) : 0; },
+    sessionMinutesLeft() { return this.token ? Math.max(0, Math.round((this.limitAt() - Date.now()) / 60000)) : 0; },
+    // 更新が必要か：トークンの残りが15分を切っていて、5時間の上限まではまだ余裕がある
+    needsRenew() {
+      const now = Date.now(), lim = this.limitAt();
+      return !!(this.token && lim && !this.pending && lim - now > 120000 && this.exp < lim && this.exp - now < 15 * 60000 && window.google && google.accounts && google.accounts.oauth2);
+    },
+    // 画面を触った（クリック・タップ）ときに呼ぶ。Googleの小さな画面が一瞬開いて、確認なしで新しいトークンを受け取る
+    renew() {
+      if (!this.needsRenew()) return this.pending;
+      this.pending = new Promise(resolve => {
+        const done = ok => { this.pending = null; resolve(ok); };
+        try {
+          const opt = { client_id: window.APP_CONFIG.clientId, scope: SCOPE, prompt: "",
+            callback: r => { if (r && r.access_token) { this.setToken(r.access_token, +r.expires_in || 3600); done(true); } else done(false); },
+            error_callback: () => done(false) };
+          const hint = ss.get("horsedb-hint"); if (hint) opt.hint = hint;
+          google.accounts.oauth2.initTokenClient(opt).requestAccessToken();
+        } catch (e) { done(false); }
+        setTimeout(() => { if (this.pending) done(false); }, 60000);
+      });
+      return this.pending;
+    },
+    // 自動更新でアカウントを選ぶ画面を出さないため、ログイン中のアカウントを覚えておく
+    async loadHint() {
+      if (ss.get("horsedb-hint") || !this.valid()) return;
+      try { const r = await fetch("https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)", { headers: { Authorization: "Bearer " + this.token } }); const j = await r.json(); if (j.user && j.user.emailAddress) ss.set("horsedb-hint", j.user.emailAddress); } catch (e) { /* noop */ }
+    },
     login(returnHash) {
       const state = Math.random().toString(36).slice(2) + Date.now().toString(36);
       try { sessionStorage.setItem("horsedb-state", state + "|" + (returnHash || location.hash || "#/")); } catch (e) { /* noop */ }
@@ -160,7 +198,7 @@
     },
     logout() {
       const t = this.token; this.token = null; this.exp = 0;
-      try { sessionStorage.removeItem("horsedb-token"); sessionStorage.removeItem("horsedb-exp"); } catch (e) { /* noop */ }
+      this.loginAt = 0; ["horsedb-token", "horsedb-exp", "horsedb-loginAt", "horsedb-hint"].forEach(ss.del);
       if (t) fetch("https://oauth2.googleapis.com/revoke?token=" + encodeURIComponent(t), { method: "POST" }).catch(() => {});
     }
   };
@@ -173,6 +211,7 @@
     let dirty = {}; // 行を削除したシート：以後の保存は行番号をIDで探し直す
 
     async function api(url, opt = {}) {
+      if (!Auth.valid() && Auth.pending) await Auth.pending; // 自動更新の途中なら待つ
       if (!Auth.valid()) throw new AuthError();
       if (!navigator.onLine) throw new NetError("通信できません。電波の良い場所でもう一度保存してください");
       let r;
