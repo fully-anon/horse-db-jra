@@ -254,6 +254,10 @@
         }).join("") : `<tr><td colspan="10" class="empty">出走予定馬を下から追加してください</td></tr>`}</tbody>
       </table></div>
 
+      <section class="card review"><h2 class="sub3">レースのふり返り</h2>
+        <textarea id="raceReview" rows="4" placeholder="展開・馬場・ペースの印象、予想との違い、次に生かすことなど" aria-label="レースのふり返り">${esc(r.review || "")}</textarea>
+        <p class="muted">欄から離れると保存します。</p></section>
+
       <section class="card" id="resCard"></section>
 
       <details class="manual" id="manualBox" ${manualOpen ? "open" : ""}><summary>手で馬を追加する（読み取りがうまくいかないとき）</summary>
@@ -354,6 +358,10 @@
     mountImporter($("#resCard"), r, ents.length && !provisional ? "result" : "card");
 
     $("#manualBox").addEventListener("toggle", e => { manualOpen = e.target.open; });
+    // レースのふり返り：欄から離れたら保存
+    { const ta = $("#raceReview"); const fit = () => { ta.style.height = "auto"; ta.style.height = Math.max(ta.scrollHeight + 2, 100) + "px"; };
+      fit(); ta.addEventListener("input", fit);
+      ta.addEventListener("change", () => run(null, async () => { if ((r.review || "") === ta.value) return; r.review = ta.value; await save("races", r); toast("レースのふり返りを保存しました"); })); }
     // 予想：表の中で書いて、欄から離れたら保存（出走記録の「予想」と同じもの）
     document.querySelectorAll("[data-pred]").forEach(ta => {
       const fit = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight + 2, 240) + "px"; };
@@ -407,6 +415,7 @@
       } else { en.raceId = dst.id; await save("entries", en); }
     }
     RES_FIELDS.forEach(([k]) => { if (!dst[k] && src[k]) dst[k] = src[k]; });
+    if (src.review && !dst.review) dst.review = src.review;
     await B.remove("races", [src.id]); D.races = D.races.filter(x => x.id !== src.id);
   }
 
@@ -905,7 +914,7 @@ ${JSON.stringify(data, null, 1)}`;
 
   /* ================= 起動 ================= */
   // 新しい版が公開されていたら1回だけ自動で読み込み直す（古いファイルが残る対策）
-  const APP_VERSION = "25";
+  const APP_VERSION = "26";
   async function checkUpdate() {
     if (!/github\.io$/.test(location.hostname)) return false;
     try {
