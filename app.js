@@ -230,7 +230,7 @@
       <div class="head"><div><p class="eyebrow">${provisional ? '出馬表 <span class="pill warn">仮・枠順未確定</span>' : "出馬表"}</p><h1>${esc(raceTitle(r))}</h1><p class="sub">${esc(raceCond(r) || "条件未入力")}</p></div>
         <div class="row"><button class="btn" id="editRace">レース条件を編集</button><button class="btn danger" id="delRace">レースを削除</button></div></div>
       <div id="delRaceBox"></div>
-      ${noNum.length ? banner(`馬番が入っていない馬が${noNum.length}頭います（${noNum.map(e => esc((horse(e.horseId) || {}).name || "")).join("、")}）。確定した出馬表にいなかった馬（回避・除外など）なら、「記録・パドック」から削除してください。`) : ""}
+      ${noNum.length ? banner(`馬番が入っていない馬が${noNum.length}頭います（${noNum.map(e => esc((horse(e.horseId) || {}).name || "")).join("、")}）。馬番は表の中で入力できます。確定した出馬表にいなかった馬（回避・除外など）なら、「記録・パドック」から削除してください。`) : ""}
       ${provisional ? banner("枠順が決まる前の仮の出馬表です。枠順が決まったら、下の「出馬表（レース前）」で確定した出馬表の画像を読み取ると、馬番が入ります。") : ""}
       ${r.lap ? `<section class="lapsec"><h2 class="sub3">ラップ</h2>${lapTable(r.lap, r.distance)}</section>` : ""}
       <section class="card" id="raceEdit" hidden>${raceForm(r)}<div class="row"><button class="btn primary" id="saveRace">保存</button></div></section>
@@ -251,8 +251,19 @@
             <td class="pred"><textarea class="predin" data-pred="${esc(e.id)}" rows="2" placeholder="予想を書く" aria-label="${esc(h.name)}の予想">${esc(e.prediction)}</textarea></td>
             ${an ? an.patterns.map(p => `<td class="n">${p.rates[e.id] != null ? p.rates[e.id].toFixed(1) + "%" : "—"}</td>`).join("") + `<td class="n"><b>${ov ? pct(ov) : "—"}</b></td><td class="n"><b class="odds">${ov ? (1 / ov).toFixed(1) + "倍" : "—"}</b></td>` : ""}
             <td><a class="btn small" href="#/entry/${encodeURIComponent(e.id)}">記録・パドック</a></td></tr>`;
-        }).join("") : `<tr><td colspan="10" class="empty">出走予定馬を下から追加してください</td></tr>`}</tbody>
+        }).join("") : `<tr><td colspan="10" class="empty">出走予定馬を、画像の読み取りか、すぐ下の「馬を手入力で追加」で追加してください</td></tr>`}</tbody>
       </table></div>
+
+      <section class="card addcard"><h2 class="sub3">馬を手入力で追加</h2>
+        <div class="row add">
+          <label class="w-num">馬番<input type="number" inputmode="numeric" min="1" max="18" id="addUmaban" data-f="addUmaban" placeholder="空欄可"></label>
+          <label class="grow">馬名<input type="text" id="addName" list="horseNames" data-f="addName" placeholder="途中まで入力すると登録済みの馬が候補に出ます" autocomplete="off"></label>
+          <label class="w-sex">性別<select id="addSex" data-f="addSex"><option value="">—</option><option>牡</option><option>牝</option><option>セン</option></select></label>
+          <button class="btn primary" id="addBtn">追加</button>
+        </div>
+        <div id="addMatch"></div>
+        <p class="muted">馬番は枠順が決まっていなければ空欄のままで追加でき、あとから表の中で入力できます。性別は新しく登録する馬（性別が未入力の馬）にだけ入ります。</p>
+      </section>
 
       <section class="card review"><h2 class="sub3">レースのふり返り</h2>
         <textarea id="raceReview" rows="4" placeholder="展開・馬場・ペースの印象、予想との違い、次に生かすことなど" aria-label="レースのふり返り">${esc(r.review || "")}</textarea>
@@ -260,16 +271,7 @@
 
       <section class="card" id="resCard"></section>
 
-      <details class="manual" id="manualBox" ${manualOpen ? "open" : ""}><summary>手で馬を追加する（読み取りがうまくいかないとき）</summary>
-      <section class="card"><h2>出走予定馬を追加</h2>
-        <div class="row add">
-          <label class="w-num">馬番<input type="number" inputmode="numeric" min="1" max="18" id="addUmaban" data-f="addUmaban"></label>
-          <label class="grow">馬名<input type="text" id="addName" list="horseNames" data-f="addName" placeholder="途中まで入力すると候補が出ます" autocomplete="off"></label>
-          <button class="btn primary" id="addBtn">追加</button>
-        </div>
-        <div id="addMatch"></div>
-      </section>
-
+      <details class="manual" id="manualBox" ${manualOpen ? "open" : ""}><summary>登録済みの馬からまとめて選んで追加する</summary>
       <section class="card"><div class="cardhead"><h2>登録済みの馬から選ぶ</h2><span class="muted" id="pickCount"></span></div>
         <p class="muted" style="margin:0">チェックした馬をまとめて出馬表に追加します。馬番は追加した後、表の中で入力できます。</p>
         <div class="row add"><label class="grow">馬名で絞り込み<input type="search" id="pickQ" placeholder="馬名の一部" autocomplete="off"></label></div>
@@ -321,11 +323,14 @@
       if (!name) { showError("馬名を入力してください"); return; }
       const sel = document.querySelector("input[name=cand]:checked");
       let hid = chosen || (sel && sel.value) || "";
-      if (!hid) { const h = await save("horses", { id: newId("H"), name: normName(name), sex: "", styles: "", body: "" }); hid = h.id; await B.log({ at: nowStr(), kind: "出馬表", input: name, decision: "新規登録", horseId: h.id, horseName: h.name }); }
+      const sex = $("#addSex").value;
+      if (!hid) { const h = await save("horses", { id: newId("H"), name: normName(name), sex, styles: "", body: "" }); hid = h.id; await B.log({ at: nowStr(), kind: "出馬表", input: name, decision: "新規登録", horseId: h.id, horseName: h.name }); }
       else if (!chosen) { await B.log({ at: nowStr(), kind: "出馬表", input: name, decision: "候補から選択", horseId: hid, horseName: horse(hid).name }); }
       if (D.entries.some(x => x.raceId === r.id && x.horseId === hid)) { showError("この馬はすでに出馬表にいます"); return; }
+      if (umaban && D.entries.some(x => x.raceId === r.id && x.umaban === String(+umaban))) { showError(`馬番${+umaban}はすでに使われています`); return; }
+      { const h = horse(hid); if (sex && h && !h.sex) { h.sex = sex; await save("horses", h); } }
       await save("entries", { id: newId("E"), horseId: hid, raceId: r.id, umaban: umaban ? String(+umaban) : "", img1: "", img2: "", anno1: "", anno2: "", finish: "", margin: "", weight: "", result: "", prediction: "", review: "" });
-      toast(horse(hid).name + "を追加しました"); render(); setTimeout(() => $("#addUmaban") && $("#addUmaban").focus(), 50);
+      toast(horse(hid).name + "を追加しました"); render(); setTimeout(() => { const el = $("#addName"); if (el) { el.scrollIntoView({ block: "center" }); el.focus(); } }, 50);
     });
 
     // Claude 分析
@@ -914,7 +919,7 @@ ${JSON.stringify(data, null, 1)}`;
 
   /* ================= 起動 ================= */
   // 新しい版が公開されていたら1回だけ自動で読み込み直す（古いファイルが残る対策）
-  const APP_VERSION = "26";
+  const APP_VERSION = "27";
   async function checkUpdate() {
     if (!/github\.io$/.test(location.hostname)) return false;
     try {

@@ -247,3 +247,4 @@ html.sk-open,html.sk-open body{overflow:hidden}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 
 .review textarea{width:100%;min-height:100px;font-size:15px;line-height:1.6;padding:8px 10px;resize:vertical;background:var(--bg)}
+.w-sex{width:90px}
