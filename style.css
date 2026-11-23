@@ -248,3 +248,6 @@ html.sk-open,html.sk-open body{overflow:hidden}
 
 .review textarea{width:100%;min-height:100px;font-size:15px;line-height:1.6;padding:8px 10px;resize:vertical;background:var(--bg)}
 .w-sex{width:90px}
+
+.rnote{display:block;margin-bottom:10px}
+.review .rnote textarea{min-height:72px}

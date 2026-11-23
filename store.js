@@ -10,7 +10,8 @@
     races: { sheet: "レース", cols: [
       ["id", "レースID"], ["date", "日付"], ["venue", "開催場"], ["raceNo", "レース番号"], ["raceName", "レース名"],
       ["cls", "クラス"], ["surface", "芝／ダート"], ["distance", "距離"], ["going", "馬場状態"],
-      ["analysis", "分析結果"], ["analyzedAt", "分析日時"], ["lap", "ラップ"], ["review", "レースのふり返り"]] },
+      ["analysis", "分析結果"], ["analyzedAt", "分析日時"], ["lap", "ラップ"], ["review", "レースのふり返り"],
+      ["flow", "レース展開"], ["run1", "1着馬の走り"], ["run2", "2着馬の走り"], ["run3", "3着馬の走り"]] },
     entries: { sheet: "出走", cols: [
       ["id", "出走ID"], ["horseId", "馬ID"], ["raceId", "レースID"], ["umaban", "馬番"],
       ["img1", "後肢伸展時画像"], ["img2", "後肢垂直時画像"], ["anno1", "書き込み1"], ["anno2", "書き込み2"],
