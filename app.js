@@ -2,7 +2,7 @@
 (function () {
   "use strict";
   const { Auth, Settings, AuthError, NetError, shrinkImage, newId, nowStr } = window.Store;
-  const { VENUES, parsePaddock, matchHorse, normName, parseResultImages, normLap, lapPairs, lapMarks, formatLap } = window.Paddock;
+  const { VENUES, parsePaddock, matchHorse, normName, looseName, parseResultImages, normLap, lapPairs, lapMarks, formatLap } = window.Paddock;
   const CLASSES = ["新馬", "未勝利", "1勝", "2勝", "3勝", "OP", "L", "G3", "G2", "G1"];
   const SURFACES = ["芝", "ダート"], GOINGS = ["良", "稍重", "重", "不良"], SEXES = ["牡", "牝", "セン"];
   const STYLES = ["逃げ", "先行", "差し", "追込", "自在"], RESULTS = ["好走", "凡走", "大敗"];
@@ -159,7 +159,7 @@
   }
 
   /* ---------------- ルーティング ---------------- */
-  const routes = { "": viewRaces, races: viewRaces, race: viewRace, horses: viewHorses, horse: viewHorse, new: () => go("#/import/card"), import: viewImport, entry: viewEntry, settings: viewSettings };
+  const routes = { "": viewRaces, races: viewRaces, race: viewRace, horses: viewHorses, horse: viewHorse, new: () => go("#/import/card"), import: viewImport, entry: viewEntry, settings: viewSettings, movies: viewMovies };
   function render() {
     if (!ready) return;
     const [, name = "", id = ""] = (location.hash.replace(/^#\/?/, "#/").match(/^#\/([^/]*)\/?(.*)$/) || []);
@@ -267,7 +267,7 @@
       </section>
 
       <section class="card"><h2 class="sub3">パドック映像のリンクをまとめて貼り付け</h2>
-        <p class="muted" style="margin-top:0">netkeibaのパドック映像のページ（各馬の映像へのリンクが並んだページ）で、一覧を選択してコピーし、下の欄に貼り付けて「反映」を押すと、馬名で照らし合わせて各馬にリンクが入ります。1頭ずつなら、表の「パドック映像」の欄に映像ページのURLを貼り付けてください。</p>
+        <p style="margin-top:0">いちばん簡単なのは、netkeibaのパドックのページで「競走馬DBへ映像を送る」ブックマークを押す方法です（<a href="#/settings">設定</a>で登録できます）。</p><p class="muted">ブックマークを使わない場合：netkeibaのパドック映像のページ（各馬の映像へのリンクが並んだページ）で、一覧を選択してコピーし、下の欄に貼り付けて「反映」を押すと、馬名で照らし合わせて各馬にリンクが入ります。1頭ずつなら、表の「パドック映像」の欄に映像ページのURLを貼り付けてください。</p>
         <textarea id="movieBulk" rows="4" placeholder="ここに貼り付け"></textarea>
         <div class="row"><button class="btn primary" id="movieApply">反映</button><span class="muted" id="movieInfo"></span></div>
       </section>
@@ -939,10 +939,77 @@ ${JSON.stringify(data, null, 1)}`;
   }
 
   /* ================= 設定 ================= */
+  /* ---------------- 前走パドック映像の取り込み（netkeibaのページでブックマークを押す） ---------------- */
+  // netkeibaのページはこのアプリから直接読み込めない（ブラウザの決まり）ため、
+  // netkeibaのページの上でブックマークレットを動かし、馬名と映像リンクをこのアプリに渡してもらう
+  function bookmarklet() {
+    const app = location.origin + location.pathname;
+    const code = `(()=>{const o=[];const s=new Set();document.querySelectorAll('a[href*="paddock_movie"]').forEach(a=>{const u=new URL(a.getAttribute('href'),location.href).href;if(s.has(u))return;s.add(u);let n=(a.title||'').replace(/\\s*パドック.*$/,'').trim();if(!n){const b=a.closest('li,tr,dl,div');const m=b&&b.textContent.match(/[ァ-ヺー]{2,}/);n=m?m[0]:''}const b=a.closest('li,tr,dl');const m=b&&b.textContent.match(/^\\s*(\\d{1,2})\\s/);o.push([n,u,m?m[1]:''])});if(!o.length){alert('パドック映像のリンクが見つかりません');return}const r=new URLSearchParams(location.search).get('race_id')||'';location.href=${JSON.stringify(app)}+'#/movies/'+encodeURIComponent(JSON.stringify({r,o}))})()`;
+    return "javascript:" + code;
+  }
+  function bookmarkletCard() {
+    const bm = bookmarklet();
+    return `<section class="card"><h2>前走パドック映像の取り込み（ブックマーク）</h2>
+      <p class="muted">netkeibaの「パドック」のページ（各馬の前走パドック映像が並んだページ）を開いた状態で、このブックマークを押すと、出走馬ごとに前走パドック映像のリンクがこのアプリに入ります。</p>
+      <p><b>PC（Chrome）</b>：下のボタンをブックマークバーにドラッグして登録します。<br><a class="btn" href="${esc(bm)}" onclick="return false">競走馬DBへ映像を送る</a></p>
+      <p><b>iPad（Safari）</b>：①このページを何でもよいのでブックマークに追加 → ②ブックマークの編集で名前を「競走馬DBへ映像を送る」、アドレスを下の「コードをコピー」で写した内容に置き換えて保存 → ③netkeibaのパドックのページで、アドレスバーをタップしてブックマークを選ぶ。</p>
+      <div class="row"><button class="btn primary" id="copyBm">コードをコピー</button></div>
+      <textarea id="bmCode" class="mono" rows="3" readonly hidden>${esc(bm)}</textarea></section>`;
+  }
+  function wireBookmarklet() {
+    const b = $("#copyBm"); if (!b) return;
+    b.onclick = async () => { const t = $("#bmCode").value; try { await navigator.clipboard.writeText(t); toast("コピーしました。ブックマークのアドレスに貼り付けてください"); } catch (e) { $("#bmCode").hidden = false; $("#bmCode").select(); toast("表示したコードを選択してコピーしてください"); } };
+  }
+  const NK_VENUE = { "01": "札幌", "02": "函館", "03": "福島", "04": "新潟", "05": "東京", "06": "中山", "07": "中京", "08": "京都", "09": "阪神", "10": "小倉" };
+  function viewMovies(raw) {
+    if (raw === "@pending") { try { raw = sessionStorage.getItem("horsedb-movies") || ""; } catch (e) { raw = ""; } }
+    let data = null; try { data = JSON.parse(raw); } catch (e) { /* noop */ }
+    const items = data && Array.isArray(data.o) ? data.o.filter(x => Array.isArray(x) && /^https:\/\/[^\s"'<>]+$/.test(x[1] || "") && /\.netkeiba\.com\//.test(x[1])) : [];
+    if (!items.length) { main().innerHTML = `<div class="head"><h1>前走パドック映像</h1></div>${banner("映像のリンクを受け取れませんでした。netkeibaのパドックのページでブックマークを押してください。")}${bookmarkletCard()}`; wireBookmarklet(); return; }
+    // netkeibaのレースID（年4桁・場2桁・回2桁・日2桁・R2桁）から開催場とレース番号がわかる
+    const rid = String(data.r || ""), m = rid.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})$/);
+    const venue = m ? NK_VENUE[m[2]] : "", raceNo = m ? String(+m[5]) : "", year = m ? m[1] : "";
+    const keyOf = n => normName(n || ""), looseOf = n => looseName(n || "");
+    const matchIn = race => {
+      const ents = entriesOfRace(race.id), res = new Map();
+      items.forEach(([n, u]) => { const k = keyOf(n), l = looseOf(n); if (!k) return;
+        const e = ents.find(x => keyOf((horse(x.horseId) || {}).name) === k) || ents.find(x => looseOf((horse(x.horseId) || {}).name) === l);
+        if (e && !res.has(e.id)) res.set(e.id, u); });
+      return res;
+    };
+    const today = new Date().toISOString().slice(0, 10);
+    const dist = r => Math.abs((new Date(r.date || "2000-01-01")) - new Date(today));
+    const cands = D.races.map(r => ({ r, hit: matchIn(r), same: venue && r.venue === venue && String(r.raceNo) === raceNo && (!year || (r.date || "").startsWith(year)) }))
+      .filter(c => c.hit.size || c.same)
+      .sort((a, b) => (b.same - a.same) || (b.hit.size - a.hit.size) || (dist(a.r) - dist(b.r)));
+    let sel = cands[0] ? cands[0].r.id : "";
+    const draw = () => {
+      const c = cands.find(x => x.r.id === sel);
+      const ents = c ? entriesOfRace(c.r.id) : [];
+      main().innerHTML = `
+        <div class="head"><div><p class="eyebrow">前走パドック映像</p><h1>${venue ? esc(venue + raceNo + "R") : "映像のリンク"}を受け取りました</h1><p class="muted">${items.length}頭分のリンク</p></div></div>
+        ${cands.length ? `<section class="card"><label>入れるレース<select id="mvRace">${cands.map(x => `<option value="${esc(x.r.id)}" ${x.r.id === sel ? "selected" : ""}>${esc(raceTitle(x.r))}（${x.hit.size}頭一致）</option>`).join("")}</select></label></section>`
+          : banner(`このアプリに${venue ? esc(venue + raceNo + "R") + "の" : ""}出馬表が見つかりません。先に出馬表を作ってから、もう一度ブックマークを押してください。`)}
+        ${c ? `<div class="tablewrap"><table class="card-table"><thead><tr><th>馬番</th><th>馬名</th><th>前走パドック映像</th></tr></thead><tbody>
+          ${ents.map(e => { const h = horse(e.horseId) || {}, u = c.hit.get(e.id);
+            return `<tr><td class="n">${esc(e.umaban)}</td><td><b>${esc(h.name)}</b></td><td>${u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">▶ 確認</a>${e.movie && e.movie !== u ? ' <span class="muted">（今のリンクを置き換え）</span>' : ""}` : `<span class="muted">${e.movie ? "今のリンクのまま" : "なし"}</span>`}</td></tr>`; }).join("")}
+          </tbody></table></div>
+          ${(() => { const used = new Set(c.hit.values()); const rest = items.filter(x => !used.has(x[1])); return rest.length ? `<p class="muted">出馬表にいない馬：${rest.map(x => esc(x[0] || "（名前不明）")).join("、")}</p>` : ""; })()}
+          <div class="row"><button class="btn primary" id="mvApply" ${c.hit.size ? "" : "disabled"}>${c.hit.size}頭にリンクを入れる</button><a class="btn" href="#/race/${encodeURIComponent(c.r.id)}">レースへ戻る</a></div>` : ""}`;
+      const s = $("#mvRace"); if (s) s.onchange = () => { sel = s.value; draw(); };
+      const b = $("#mvApply"); if (b) b.onclick = ev => run(ev.target, async () => {
+        for (const [eid, u] of c.hit) { const en = entry(eid); if (en && en.movie !== u) { en.movie = u; await save("entries", en); } }
+        toast(`${c.hit.size}頭に前走パドック映像のリンクを入れました`); go("#/race/" + encodeURIComponent(c.r.id));
+      });
+    };
+    draw();
+  }
+
   function viewSettings() {
     const key = Settings.get("visionKey");
     main().innerHTML = `
       <div class="head"><h1>設定</h1></div>
+      ${bookmarkletCard()}
       <section class="card"><h2>文字認識（Vision API）のAPIキー</h2>
         <p class="muted">キーはこのiPadの中にだけ保存され、アプリのコードやスプレッドシートには入りません。</p>
         <p>${key ? `設定済み（末尾 <span class="mono">${esc(key.slice(-4))}</span>）` : "未設定"}</p>
@@ -955,6 +1022,7 @@ ${JSON.stringify(data, null, 1)}`;
           <div class="row">${B.sheetURL() ? `<a class="btn" href="${esc(B.sheetURL())}" target="_blank" rel="noopener">スプレッドシートを開く</a>` : ""}<button class="btn" id="logout">ログアウト</button></div>`}
       </section>
       <section class="card"><h2>このアプリについて</h2><p class="muted">競走馬DB 版 ${APP_VERSION}。馬 ${D.horses.length}頭・レース ${D.races.length}件・出走 ${D.entries.length}件</p></section>`;
+    wireBookmarklet();
     $("#saveKey").onclick = () => { const v = $("#vkey").value.trim(); if (!/^[\w-]{20,}$/.test(v)) { showError("APIキーの形式が正しくないようです。コピーし直して貼り付けてください"); return; } Settings.set("visionKey", v); toast("APIキーを保存しました"); render(); };
     if ($("#delKey")) $("#delKey").onclick = () => { Settings.set("visionKey", ""); toast("APIキーを削除しました"); render(); };
     if ($("#logout")) $("#logout").onclick = () => { Auth.logout(); location.hash = "#/"; location.reload(); };
@@ -967,7 +1035,7 @@ ${JSON.stringify(data, null, 1)}`;
 
   /* ================= 起動 ================= */
   // 新しい版が公開されていたら1回だけ自動で読み込み直す（古いファイルが残る対策）
-  const APP_VERSION = "28";
+  const APP_VERSION = "29";
   async function checkUpdate() {
     if (!/github\.io$/.test(location.hostname)) return false;
     try {
@@ -982,6 +1050,8 @@ ${JSON.stringify(data, null, 1)}`;
     return false;
   }
   async function boot() {
+    // ブックマークから受け取った映像リンクは長いので、ログインやアプリ更新の前にタブの中へ退避しておく
+    if (/^#\/movies\/[^@]/.test(location.hash)) { try { sessionStorage.setItem("horsedb-movies", decodeURIComponent(location.hash.slice(9))); history.replaceState(null, "", "#/movies/@pending"); } catch (e) { /* noop */ } }
     if (await checkUpdate()) return;
     $("#mode").hidden = !demo;
     if (!demo) {
