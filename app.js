@@ -825,7 +825,7 @@ ${JSON.stringify(data, null, 1)}`;
 
   /* ================= 起動 ================= */
   // 新しい版が公開されていたら1回だけ自動で読み込み直す（古いファイルが残る対策）
-  const APP_VERSION = "32";
+  const APP_VERSION = "33";
   async function checkUpdate() {
     if (!/github\.io$/.test(location.hostname)) return false;
     try {

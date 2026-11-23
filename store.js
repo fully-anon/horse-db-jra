@@ -6,7 +6,7 @@
   const TABLES = {
     horses: { sheet: "馬", cols: [
       ["id", "馬ID"], ["name", "名前"], ["sex", "性別"], ["styles", "脚質"], ["body", "馬体の特徴"],
-      ["raceStyle", "レースからみる脚質"], ["created", "登録日"], ["updated", "更新日"]] },
+      ["created", "登録日"], ["updated", "更新日"], ["raceStyle", "レースからみる脚質"]] },
     races: { sheet: "レース", cols: [
       ["id", "レースID"], ["date", "日付"], ["venue", "開催場"], ["raceNo", "レース番号"], ["raceName", "レース名"],
       ["cls", "クラス"], ["surface", "芝／ダート"], ["distance", "距離"], ["going", "馬場状態"],
@@ -257,6 +257,16 @@
       const ts = Object.values(TABLES);
       const hd = await (await api(SHEETS + id + "/values:batchGet?" + ts.map(t => "ranges=" + encodeURIComponent(`'${t.sheet}'!1:1`)).join("&"))).json();
       const fix = [];
+      // 版32で「レースからみる脚質」を登録日の前に入れてしまい、既存の登録日が脚質の欄に見えていたのを直す。
+      // その版で保存した行（更新日の位置に日付がある行）は並べ替え、それ以外の行はそのまま。日付だけの脚質は消す
+      const hcur = ((hd.valueRanges[0] || {}).values || [[]])[0] || [];
+      if (hcur[5] === "レースからみる脚質" && hcur[6] === "登録日") {
+        const rows = (((await (await api(SHEETS + id + "/values/" + encodeURIComponent("'馬'!A2:H"))).json()).values) || []);
+        const isDate = v => /^\d{4}[-/]\d{1,2}[-/]\d{1,2}([ T]\d{1,2}:\d{2}(:\d{2})?)?$/.test(String(v || "").trim());
+        const fixed = rows.map(r => { const a = r.slice(0, 5); while (a.length < 5) a.push(""); const [f = "", g = "", h = ""] = r.slice(5, 8);
+          return isDate(h) ? [...a, g, h, isDate(f) ? "" : f] : [...a, f, g, isDate(h) || h === "" ? "" : h]; });
+        if (fixed.length) fix.push({ range: "'馬'!A2:H" + (fixed.length + 1), values: fixed });
+      }
       ts.forEach((t, i) => { const cur = ((hd.valueRanges[i] || {}).values || [[]])[0] || []; if (t.cols.some((c, j) => cur[j] !== c[1])) fix.push({ range: `'${t.sheet}'!A1`, values: [t.cols.map(c => c[1])] }); });
       if (fix.length) await api(SHEETS + id + "/values:batchUpdate", { method: "POST", headers: J, body: JSON.stringify({ valueInputOption: "RAW", data: fix }) });
     }
