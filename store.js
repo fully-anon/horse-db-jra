@@ -5,8 +5,8 @@
   // シートの列定義（1行目は日本語の見出し。順番を変えないこと）
   const TABLES = {
     horses: { sheet: "馬", cols: [
-      ["id", "馬ID"], ["name", "名前"], ["sex", "性別"], ["styles", "脚質"], ["body", "馬体の特徴"],
-      ["created", "登録日"], ["updated", "更新日"], ["raceStyle", "レースからみる脚質"]] },
+      ["id", "馬ID"], ["name", "馬名"], ["sex", "性別"], ["styles", "脚質"], ["body", "馬体の特徴"],
+      ["created", "登録日"], ["updated", "更新日"], ["raceStyle", "レースから見る脚質"]] },
     races: { sheet: "レース", cols: [
       ["id", "レースID"], ["date", "日付"], ["venue", "開催場"], ["raceNo", "レース番号"], ["raceName", "レース名"],
       ["cls", "クラス"], ["surface", "芝／ダート"], ["distance", "距離"], ["going", "馬場状態"],
