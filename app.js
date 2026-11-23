@@ -235,7 +235,7 @@
       <section class="card" id="raceEdit" hidden>${raceForm(r)}<div class="row"><button class="btn primary" id="saveRace">保存</button></div></section>
       ${an ? `<section class="patterns">${an.patterns.map((p, i) => `<div class="pat"><span class="pnum">展開${i + 1}</span><b>${esc(p.name)}</b><span class="prob">${p.probability.toFixed(1)}%</span><p>${esc(p.summary)}</p></div>`).join("")}<p class="muted">分析日時 ${esc(r.analyzedAt)}。基準オッズ＝この単勝オッズを超えれば回収率100%超え</p></section>` : ""}
       <div class="tablewrap"><table class="card-table">
-        <thead><tr><th>馬番</th><th>馬名</th>${hasRes ? '<th class="n">着順</th><th class="n">着差</th>' : ""}<th>性</th><th>脚質</th><th>レースからみる脚質</th><th>馬体の特徴</th><th>好走時の展開</th><th>予想</th>
+        <thead><tr><th>馬番</th><th>馬名</th>${hasRes ? '<th class="n">着順</th><th class="n">着差</th>' : ""}<th>性</th><th>脚質</th><th>馬体の特徴</th><th>レースからみる脚質</th><th>好走時の展開</th><th>予想</th>
           ${an ? an.patterns.map((p, i) => `<th class="n">展開${i + 1}</th>`).join("") + `<th class="n">総合勝率</th><th class="n">基準オッズ</th>` : ""}<th></th></tr></thead>
         <tbody>${ents.length ? ents.map(e => {
           const h = horse(e.horseId) || {}; const g = goodSummary(e.horseId); const ov = overall(e);
@@ -245,8 +245,8 @@
             ${hasRes ? `<td class="n"><b>${esc(e.finish)}</b></td><td class="n">${esc(e.margin)}</td>` : ""}
             <td>${esc(h.sex)}</td>
             <td>${styles(h).map(s => `<span class="pill">${esc(s)}</span>`).join(" ")}</td>
-            <td class="wrap">${esc(h.raceStyle || "")}</td>
             <td class="wrap">${esc(h.body)}</td>
+            <td class="wrap">${esc(h.raceStyle || "")}</td>
             <td class="wrap">${g.paces.length ? `<ul class="paces">${g.paces.slice(0, 3).map(p => `<li><span class="muted">${esc(p.race ? p.race.date : "")}</span> ${esc(p.text)}</li>`).join("")}</ul>${g.paces.length > 3 ? `<span class="muted">ほか${g.paces.length - 3}件</span>` : ""}` : '<span class="muted">—</span>'}</td>
             <td class="pred"><textarea class="predin" data-pred="${esc(e.id)}" rows="2" placeholder="予想を書く" aria-label="${esc(h.name)}の予想">${esc(e.prediction)}</textarea></td>
             ${an ? an.patterns.map(p => `<td class="n">${p.rates[e.id] != null ? p.rates[e.id].toFixed(1) + "%" : "—"}</td>`).join("") + `<td class="n"><b>${ov ? pct(ov) : "—"}</b></td><td class="n"><b class="odds">${ov ? (1 / ov).toFixed(1) + "倍" : "—"}</b></td>` : ""}
@@ -716,8 +716,8 @@ ${JSON.stringify(data, null, 1)}`;
       <label>名前<input type="text" id="hname" data-f="hname" value="${esc(h.name)}"></label>
       <label>性別<select id="hsex" data-f="hsex">${opts(SEXES, h.sex)}</select></label>
       <fieldset class="checks"><legend>脚質（複数可）</legend>${STYLES.map(s => `<label><input type="checkbox" data-f="hstyle" value="${s}" ${styles(h).includes(s) ? "checked" : ""}> ${s}</label>`).join("")}</fieldset>
-      <label class="span2">レースからみる脚質<textarea id="hraceStyle" data-f="hraceStyle" rows="3" placeholder="例：スタートが遅く後方から。直線で外に出すと伸びる">${esc(h.raceStyle || "")}</textarea></label>
       <label class="span2">馬体の特徴<textarea id="hbody" data-f="hbody" rows="3">${esc(h.body)}</textarea></label>
+      <label class="span2">レースからみる脚質<textarea id="hraceStyle" data-f="hraceStyle" rows="3" placeholder="例：スタートが遅く後方から。直線で外に出すと伸びる">${esc(h.raceStyle || "")}</textarea></label>
     </div>`;
   }
   const readHorse = () => ({ name: ($("#hname") ? $("#hname").value.trim() : undefined), sex: $("#hsex").value, styles: [...document.querySelectorAll("[data-f=hstyle]:checked")].map(c => c.value).join(","), body: $("#hbody").value, raceStyle: $("#hraceStyle").value });
@@ -825,7 +825,7 @@ ${JSON.stringify(data, null, 1)}`;
 
   /* ================= 起動 ================= */
   // 新しい版が公開されていたら1回だけ自動で読み込み直す（古いファイルが残る対策）
-  const APP_VERSION = "33";
+  const APP_VERSION = "34";
   async function checkUpdate() {
     if (!/github\.io$/.test(location.hostname)) return false;
     try {
