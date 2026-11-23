@@ -216,6 +216,18 @@
     ["run2", "2着馬の走り", "位置取り・道中・直線での脚など"],
     ["run3", "3着馬の走り", "位置取り・道中・直線での脚など"],
     ["review", "レースのふり返り", "予想との違い、次に生かすことなど"]];
+  // 前走・2走前・3走前（このレースより前の日付の出走。日付がないレースは除く）
+  function pastRuns(e, r) {
+    const list = entriesOfHorse(e.horseId).filter(x => x.raceId !== r.id).map(x => ({ e: x, r: race(x.raceId) || {} }))
+      .filter(x => x.r.date && (!r.date || x.r.date < r.date));
+    return [0, 1, 2].map(i => list[i] || null);
+  }
+  function pastCell({ e, r }) {
+    const mg = e.margin && /^-?\d+(\.\d+)?$/.test(String(e.margin).trim()) ? `${e.margin}秒` : esc(e.margin || "");
+    return `<a class="pdate" href="#/entry/${encodeURIComponent(e.id)}">${esc((r.date || "").slice(2).replace(/-/g, "/"))} ${esc(r.venue || "")}</a>
+      <div class="pline"><b>${esc(r.cls || "クラス未入力")}</b>　${e.finish ? `<b>${esc(e.finish)}着</b>` : '<span class="muted">着順なし</span>'}${mg ? `　<span class="muted">着差</span> ${mg}` : ""}</div>
+      ${e.review ? `<div class="prev">${esc(e.review)}</div>` : ""}`;
+  }
   function viewRace(id) {
     const r = race(id); if (!r) { main().innerHTML = banner("レースが見つかりません"); return; }
     const ents = entriesOfRace(id);
@@ -235,22 +247,23 @@
       <section class="card" id="raceEdit" hidden>${raceForm(r)}<div class="row"><button class="btn primary" id="saveRace">保存</button></div></section>
       ${an ? `<section class="patterns">${an.patterns.map((p, i) => `<div class="pat"><span class="pnum">展開${i + 1}</span><b>${esc(p.name)}</b><span class="prob">${p.probability.toFixed(1)}%</span><p>${esc(p.summary)}</p></div>`).join("")}<p class="muted">分析日時 ${esc(r.analyzedAt)}。基準オッズ＝この単勝オッズを超えれば回収率100%超え</p></section>` : ""}
       <div class="tablewrap"><table class="card-table">
-        <thead><tr><th>馬番</th><th>馬名</th>${hasRes ? '<th class="n">着順</th><th class="n">着差</th>' : ""}<th>性</th><th>馬体の特徴</th><th>レースから見る脚質</th><th>脚質</th><th>予想</th>
+        <thead><tr><th>馬番</th><th>馬名</th>${hasRes ? '<th class="n">着順</th><th class="n">着差</th>' : ""}<th>性</th><th>馬体の特徴</th><th>レースから見る脚質</th><th>脚質</th><th>予想</th><th>前走</th><th>2走前</th><th>3走前</th>
           ${an ? an.patterns.map((p, i) => `<th class="n">展開${i + 1}</th>`).join("") + `<th class="n">総合勝率</th><th class="n">基準オッズ</th>` : ""}<th></th></tr></thead>
         <tbody>${ents.length ? ents.map(e => {
           const h = horse(e.horseId) || {}; const ov = overall(e);
           return `<tr>
             <td class="n umaban"><input type="number" inputmode="numeric" min="1" max="18" class="umaban-in" data-umaban="${esc(e.id)}" value="${esc(e.umaban)}" aria-label="${esc((horse(e.horseId) || {}).name)}の馬番"></td>
-            <td><a href="#/horse/${encodeURIComponent(h.id)}"><b>${esc(h.name)}</b></a></td>
+            <td class="hname"><a href="#/horse/${encodeURIComponent(h.id)}"><b>${esc(h.name)}</b></a></td>
             ${hasRes ? `<td class="n"><b>${esc(e.finish)}</b></td><td class="n">${esc(e.margin)}</td>` : ""}
             <td>${esc(h.sex)}</td>
             <td class="wrap">${esc(h.body)}</td>
             <td class="wrap">${esc(h.raceStyle || "")}</td>
             <td>${styles(h).map(s => `<span class="pill">${esc(s)}</span>`).join(" ")}</td>
             <td class="pred"><textarea class="predin" data-pred="${esc(e.id)}" rows="2" placeholder="予想を書く" aria-label="${esc(h.name)}の予想">${esc(e.prediction)}</textarea></td>
+            ${pastRuns(e, r).map(x => `<td class="past">${x ? pastCell(x) : '<span class="muted">—</span>'}</td>`).join("")}
             ${an ? an.patterns.map(p => `<td class="n">${p.rates[e.id] != null ? p.rates[e.id].toFixed(1) + "%" : "—"}</td>`).join("") + `<td class="n"><b>${ov ? pct(ov) : "—"}</b></td><td class="n"><b class="odds">${ov ? (1 / ov).toFixed(1) + "倍" : "—"}</b></td>` : ""}
             <td><a class="btn small" href="#/entry/${encodeURIComponent(e.id)}">記録</a></td></tr>`;
-        }).join("") : `<tr><td colspan="10" class="empty">出走予定馬を、画像の読み取りか、すぐ下の「馬を手入力で追加」で追加してください</td></tr>`}</tbody>
+        }).join("") : `<tr><td colspan="13" class="empty">出走予定馬を、画像の読み取りか、すぐ下の「馬を手入力で追加」で追加してください</td></tr>`}</tbody>
       </table></div>
 
       <section class="card addcard"><h2 class="sub3">馬を手入力で追加</h2>
@@ -822,7 +835,7 @@ ${JSON.stringify(data, null, 1)}`;
 
   /* ================= 起動 ================= */
   // 新しい版が公開されていたら1回だけ自動で読み込み直す（古いファイルが残る対策）
-  const APP_VERSION = "37";
+  const APP_VERSION = "38";
   async function checkUpdate() {
     if (!/github\.io$/.test(location.hostname)) return false;
     try {

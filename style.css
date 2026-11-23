@@ -251,3 +251,7 @@ html.sk-open,html.sk-open body{overflow:hidden}
 
 .rnote{display:block;margin-bottom:10px}
 .review .rnote textarea{min-height:72px}
+.card-table td.past{min-width:170px;max-width:240px;font-size:13px;line-height:1.5;vertical-align:top}
+.card-table td.past .pdate{font-size:12px;color:var(--muted)}
+.card-table td.past .prev{margin-top:4px;white-space:pre-wrap;display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden}
+.card-table td.hname{white-space:nowrap}
