@@ -5,7 +5,7 @@
   const { VENUES, matchHorse, normName, parseResultImages, normLap, lapPairs, lapMarks, formatLap } = window.Paddock;
   const CLASSES = ["新馬", "未勝利", "1勝", "2勝", "3勝", "OP", "L", "G3", "G2", "G1"];
   const SURFACES = ["芝", "ダート"], GOINGS = ["良", "稍重", "重", "不良"], SEXES = ["牡", "牝", "セン"];
-  const STYLES = ["逃げ", "先行", "差し", "追込", "自在"], RESULTS = ["好走", "凡走", "大敗"];
+  const STYLES = ["逃げ", "先行", "差し", "追込", "自在"];
 
   const esc = t => String(t == null ? "" : t).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const $ = s => document.querySelector(s);
@@ -35,12 +35,6 @@
   const parseJSON = (s, d) => { try { return s ? JSON.parse(s) : d; } catch (e) { return d; } };
   function entriesOfHorse(hid) { return D.entries.filter(e => e.horseId === hid).sort((a, b) => String((race(b.raceId) || {}).date).localeCompare(String((race(a.raceId) || {}).date))); }
   function entriesOfRace(rid) { return D.entries.filter(e => e.raceId === rid).sort((a, b) => (+a.umaban || 99) - (+b.umaban || 99)); }
-  function goodSummary(hid) {
-    const good = entriesOfHorse(hid).filter(e => e.result === "好走");
-    const paces = good.filter(e => e.review).map(e => ({ text: e.review, race: race(e.raceId) }));
-    const ws = good.map(e => +e.weight).filter(w => w > 0);
-    return { count: good.length, paces, weight: ws.length ? (Math.min(...ws) === Math.max(...ws) ? `${ws[0]}kg` : `${Math.min(...ws)}〜${Math.max(...ws)}kg`) : "" };
-  }
 
   /* ---------------- ラップ：距離とタイムを組で表示・入力 ---------------- */
   function lapTable(lap, distance) {
@@ -235,10 +229,10 @@
       <section class="card" id="raceEdit" hidden>${raceForm(r)}<div class="row"><button class="btn primary" id="saveRace">保存</button></div></section>
       ${an ? `<section class="patterns">${an.patterns.map((p, i) => `<div class="pat"><span class="pnum">展開${i + 1}</span><b>${esc(p.name)}</b><span class="prob">${p.probability.toFixed(1)}%</span><p>${esc(p.summary)}</p></div>`).join("")}<p class="muted">分析日時 ${esc(r.analyzedAt)}。基準オッズ＝この単勝オッズを超えれば回収率100%超え</p></section>` : ""}
       <div class="tablewrap"><table class="card-table">
-        <thead><tr><th>馬番</th><th>馬名</th>${hasRes ? '<th class="n">着順</th><th class="n">着差</th>' : ""}<th>性</th><th>馬体の特徴</th><th>レースから見る脚質</th><th>脚質</th><th>好走時の展開</th><th>予想</th>
+        <thead><tr><th>馬番</th><th>馬名</th>${hasRes ? '<th class="n">着順</th><th class="n">着差</th>' : ""}<th>性</th><th>馬体の特徴</th><th>レースから見る脚質</th><th>脚質</th><th>予想</th>
           ${an ? an.patterns.map((p, i) => `<th class="n">展開${i + 1}</th>`).join("") + `<th class="n">総合勝率</th><th class="n">基準オッズ</th>` : ""}<th></th></tr></thead>
         <tbody>${ents.length ? ents.map(e => {
-          const h = horse(e.horseId) || {}; const g = goodSummary(e.horseId); const ov = overall(e);
+          const h = horse(e.horseId) || {}; const ov = overall(e);
           return `<tr>
             <td class="n umaban"><input type="number" inputmode="numeric" min="1" max="18" class="umaban-in" data-umaban="${esc(e.id)}" value="${esc(e.umaban)}" aria-label="${esc((horse(e.horseId) || {}).name)}の馬番"></td>
             <td><a href="#/horse/${encodeURIComponent(h.id)}"><b>${esc(h.name)}</b></a></td>
@@ -247,7 +241,6 @@
             <td class="wrap">${esc(h.body)}</td>
             <td class="wrap">${esc(h.raceStyle || "")}</td>
             <td>${styles(h).map(s => `<span class="pill">${esc(s)}</span>`).join(" ")}</td>
-            <td class="wrap">${g.paces.length ? `<ul class="paces">${g.paces.slice(0, 3).map(p => `<li><span class="muted">${esc(p.race ? p.race.date : "")}</span> ${esc(p.text)}</li>`).join("")}</ul>${g.paces.length > 3 ? `<span class="muted">ほか${g.paces.length - 3}件</span>` : ""}` : '<span class="muted">—</span>'}</td>
             <td class="pred"><textarea class="predin" data-pred="${esc(e.id)}" rows="2" placeholder="予想を書く" aria-label="${esc(h.name)}の予想">${esc(e.prediction)}</textarea></td>
             ${an ? an.patterns.map(p => `<td class="n">${p.rates[e.id] != null ? p.rates[e.id].toFixed(1) + "%" : "—"}</td>`).join("") + `<td class="n"><b>${ov ? pct(ov) : "—"}</b></td><td class="n"><b class="odds">${ov ? (1 / ov).toFixed(1) + "倍" : "—"}</b></td>` : ""}
             <td><a class="btn small" href="#/entry/${encodeURIComponent(e.id)}">記録</a></td></tr>`;
@@ -541,7 +534,7 @@
             <td id="is_${i}"></td></tr>`).join("")}
           </tbody></table></div>` : ""}
         ${rows.length || FIELDS.some(([k]) => rr[k]) ? `<div class="row"><button class="btn primary" id="resApply">${isCard ? "出馬表を登録する" : "結果を登録する"}</button><button class="btn" id="resCancel">やめる</button></div>
-          <p class="muted">${isCard ? "レースが終わったら、このレースの画面で「結果（レース後）」の画像を読み取ってください。" : "結果区分（好走／凡走／大敗）やパドック画像・メモは、各馬の「記録」から入力してください。"}</p>` : ""}
+          <p class="muted">${isCard ? "レースが終わったら、このレースの画面で「結果（レース後）」の画像を読み取ってください。" : "予想や振り返りは、各馬の「記録」から入力できます。"}</p>` : ""}
         <details class="dbg"><summary>読み取りがうまくいかないとき</summary>
           <p class="muted">下のボタンで、文字認識の結果（文字と位置）をコピーできます。Claude とのチャットに貼り付けてもらえれば、読み取りのルールを調整できます。画像そのものや Google の情報は含まれません。</p>
           <div class="row"><button class="btn small" id="dbgCopy">読み取りの詳細をコピー</button></div><textarea id="dbgText" class="mono" rows="4" hidden readonly></textarea></details>`;
@@ -642,11 +635,10 @@
     const data = {
       race: { date: r.date, venue: r.venue, raceNo: r.raceNo, raceName: r.raceName, class: r.cls, surface: r.surface, distance: r.distance, going: r.going },
       horses: ents.map(e => {
-        const h = horse(e.horseId) || {}; const g = goodSummary(e.horseId);
+        const h = horse(e.horseId) || {};
         return {
           umaban: +e.umaban || null, name: h.name, sex: h.sex, runningStyles: styles(h), runningStyleFromRaces: h.raceStyle || "", bodyNotes: h.body,
-          goodRunPaces: g.paces.map(p => p.text), goodRunWeight: g.weight,
-          history: entriesOfHorse(h.id).filter(x => x.raceId !== r.id).slice(0, 10).map(x => { const rr = race(x.raceId) || {}; return { date: rr.date, venue: rr.venue, class: rr.cls, surface: rr.surface, distance: rr.distance, going: rr.going, finish: x.finish, margin: x.margin, weight: x.weight, result: x.result, paceAndReview: x.review }; })
+          history: entriesOfHorse(h.id).filter(x => x.raceId !== r.id).slice(0, 10).map(x => { const rr = race(x.raceId) || {}; return { date: rr.date, venue: rr.venue, class: rr.cls, surface: rr.surface, distance: rr.distance, going: rr.going, finish: x.finish, margin: x.margin, weight: x.weight, paceAndReview: x.review }; })
         };
       })
     };
@@ -705,8 +697,8 @@ ${JSON.stringify(data, null, 1)}`;
       const q = normName($("#hq").value || "");
       const rows = D.horses.filter(h => !q || normName(h.name).includes(q)).sort((a, b) => String(b.updated).localeCompare(String(a.updated)));
       $("#horseList").innerHTML = rows.length ? rows.map(h => {
-        const n = entriesOfHorse(h.id).length, g = goodSummary(h.id);
-        return `<li><a class="item" href="#/horse/${encodeURIComponent(h.id)}"><span class="t">${esc(h.name)} <span class="muted">${esc(h.sex)}</span></span><span class="s">${styles(h).join("・") || "脚質未入力"}・出走${n}・好走${g.count}${g.weight ? "・好走時 " + esc(g.weight) : ""}</span></a></li>`;
+        const n = entriesOfHorse(h.id).length;
+        return `<li><a class="item" href="#/horse/${encodeURIComponent(h.id)}"><span class="t">${esc(h.name)} <span class="muted">${esc(h.sex)}</span></span><span class="s">${styles(h).join("・") || "脚質未入力"}・出走${n}</span></a></li>`;
       }).join("") : `<li class="empty">${D.horses.length ? "該当する馬はいません" : "まだ馬がいません。出馬表の作成で自動的に登録されます。"}</li>`;
     };
     $("#hq").oninput = draw; draw();
@@ -723,20 +715,16 @@ ${JSON.stringify(data, null, 1)}`;
   const readHorse = () => ({ name: ($("#hname") ? $("#hname").value.trim() : undefined), sex: $("#hsex").value, styles: [...document.querySelectorAll("[data-f=hstyle]:checked")].map(c => c.value).join(","), body: $("#hbody").value, raceStyle: $("#hraceStyle").value });
   function viewHorse(id) {
     const h = horse(id); if (!h) { main().innerHTML = banner("馬が見つかりません"); return; }
-    const g = goodSummary(id), ents = entriesOfHorse(id);
+    const ents = entriesOfHorse(id);
     main().innerHTML = `
       <div class="head"><div><p class="eyebrow">馬</p><h1>${esc(h.name)}</h1></div><button class="btn danger" id="delHorse">この馬を削除</button></div>
       <div id="delHorseBox"></div>
       <section class="card">${horseFields(h)}<div class="row"><button class="btn primary" id="saveHorse">保存</button></div></section>
-      <div class="two">
-        <section class="card"><h2>好走時の展開</h2>${g.paces.length ? `<ul class="paces">${g.paces.map(p => `<li><span class="muted">${esc(raceTitle(p.race))}</span><br>${esc(p.text)}</li>`).join("")}</ul>` : '<p class="muted">好走の記録がまだありません</p>'}</section>
-        <section class="card"><h2>好走時の馬体重</h2><p class="big">${g.weight || "—"}</p><p class="muted">好走 ${g.count}回</p></section>
-      </div>
       <section><h2>出走履歴</h2><ul class="runs">${ents.length ? ents.map(e => {
         const r = race(e.raceId) || {};
         return `<li><a class="run" href="#/entry/${encodeURIComponent(e.id)}">
           <span class="body"><span class="t">${esc(raceTitle(r))}</span><span class="s">${esc(raceCond(r))}${e.finish ? "・" + esc(e.finish) + "着" : ""}${e.weight ? "・" + esc(e.weight) + "kg" : ""}</span></span>
-          ${e.result ? `<span class="res r-${RESULTS.indexOf(e.result)}">${esc(e.result)}</span>` : ""}</a></li>`;
+</a></li>`;
       }).join("") : '<li class="empty">出走記録はまだありません</li>'}</ul></section>`;
     $("#delHorse").onclick = () => {
       const list = entriesOfHorse(h.id), ni = imgCount(list);
@@ -765,13 +753,12 @@ ${JSON.stringify(data, null, 1)}`;
           <label>着順<input type="number" inputmode="numeric" id="efinish" data-f="efinish" value="${esc(e.finish)}"></label>
           <label>着差（1着とのタイム差・秒）<input type="text" id="emargin" data-f="emargin" value="${esc(e.margin)}" placeholder="0.3" inputmode="decimal"></label>
           <label>馬体重（kg）<input type="number" inputmode="numeric" id="eweight" data-f="eweight" value="${esc(e.weight)}"></label>
-          <label>結果区分<select id="eresult" data-f="eresult">${opts(RESULTS, e.result)}</select></label>
           <label>馬番<input type="number" inputmode="numeric" id="eumaban" data-f="eumaban" value="${esc(e.umaban)}"></label>
         </div></section>
         <section class="card"><h2>この馬の情報</h2>${horseFields(h).replace('<label>馬名<input type="text" id="hname" data-f="hname" value="' + esc(h.name) + '"></label>', "")}</section>
       </div>
       <section class="card"><h2>予想</h2><textarea id="epred" data-f="epred" rows="3">${esc(e.prediction)}</textarea></section>
-      <section class="card"><h2>展開と振返り</h2><textarea id="ereview" data-f="ereview" rows="4">${esc(e.review)}</textarea><p class="muted">結果区分が「好走」のとき、この内容が馬の「好走時の展開」に並びます。</p></section>
+      <section class="card"><h2>展開と振返り</h2><textarea id="ereview" data-f="ereview" rows="4">${esc(e.review)}</textarea></section>
       <section class="card"><h2>レース条件</h2><p class="muted">同じレースの他の馬にも反映されます。</p>${raceForm(r)}</section>
       <section class="card"><h2>この出走記録を削除</h2><p class="muted">出馬表から外したいときや、間違えて登録したときに使います。馬とレースは残ります。</p><div class="row"><button class="btn danger" id="delEntry">出走記録を削除</button></div><div id="delEntryBox"></div></section>
       <div class="savebar"><button class="btn primary" id="saveEntry">保存</button></div>`;
@@ -787,7 +774,7 @@ ${JSON.stringify(data, null, 1)}`;
     $("#saveEntry").onclick = ev => run(ev.target, async () => {
       const f = readRaceForm(); if (!f.date && !(f.venue && f.raceNo)) { showError("レース条件の日付、または開催場とレース番号を入力してください"); return; }
       const dup = f.venue && f.raceNo && findRace(f.date, f.venue, f.raceNo); if (dup && dup.id !== r.id) { showError("同じ日付・開催場・レース番号のレースが別にあります"); return; }
-      Object.assign(e, { finish: $("#efinish").value, margin: $("#emargin").value.trim(), weight: $("#eweight").value, result: $("#eresult").value, umaban: $("#eumaban").value ? String(+$("#eumaban").value) : "", prediction: $("#epred").value, review: $("#ereview").value });
+      Object.assign(e, { finish: $("#efinish").value, margin: $("#emargin").value.trim(), weight: $("#eweight").value, umaban: $("#eumaban").value ? String(+$("#eumaban").value) : "", prediction: $("#epred").value, review: $("#ereview").value });
       await save("entries", e);
       const hv = readHorse(); delete hv.name;
       if (hv.sex !== (h.sex || "") || hv.styles !== (h.styles || "") || hv.body !== (h.body || "") || hv.raceStyle !== (h.raceStyle || "")) await save("horses", Object.assign(h, hv));
@@ -825,7 +812,7 @@ ${JSON.stringify(data, null, 1)}`;
 
   /* ================= 起動 ================= */
   // 新しい版が公開されていたら1回だけ自動で読み込み直す（古いファイルが残る対策）
-  const APP_VERSION = "35";
+  const APP_VERSION = "36";
   async function checkUpdate() {
     if (!/github\.io$/.test(location.hostname)) return false;
     try {
