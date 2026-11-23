@@ -500,5 +500,5 @@
   }
   function normLap(s, distance) { return formatLap(lapPairs(s, distance)); }
 
-  window.Paddock = { VENUES, parsePaddock, normName, looseName, matchHorse, parseResultImages, inferDate, normLap, lapPairs, lapMarks, formatLap };
+  window.Paddock = { VENUES, parsePaddock, normName, matchHorse, parseResultImages, inferDate, normLap, lapPairs, lapMarks, formatLap };
 })();

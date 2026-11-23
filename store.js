@@ -15,7 +15,7 @@
       ["id", "出走ID"], ["horseId", "馬ID"], ["raceId", "レースID"], ["umaban", "馬番"],
       ["img1", "後肢伸展時画像"], ["img2", "後肢垂直時画像"], ["anno1", "書き込み1"], ["anno2", "書き込み2"],
       ["finish", "着順"], ["margin", "着差"], ["weight", "馬体重"], ["result", "結果区分"],
-      ["prediction", "予想"], ["review", "展開と振返り"], ["movie", "パドック映像"], ["created", "登録日"], ["updated", "更新日"]] },
+      ["prediction", "予想"], ["review", "展開と振返り"], ["created", "登録日"], ["updated", "更新日"]] },
     log: { sheet: "名寄せ履歴", cols: [
       ["at", "日時"], ["kind", "種別"], ["input", "入力名"], ["decision", "判定"], ["horseId", "馬ID"], ["horseName", "馬名"]] }
   };
