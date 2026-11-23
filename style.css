@@ -248,3 +248,7 @@ html.sk-open,html.sk-open body{overflow:hidden}
 
 .review textarea{width:100%;min-height:100px;font-size:15px;line-height:1.6;padding:8px 10px;resize:vertical;background:var(--bg)}
 .w-sex{width:90px}
+.card-table td.movie{white-space:nowrap}
+.card-table td.movie .movie-in{width:150px;font-size:13px;padding:6px 8px}
+.linkbtn{background:none;border:none;color:var(--muted);text-decoration:underline;padding:4px}
+#movieBulk{width:100%;font-size:14px}

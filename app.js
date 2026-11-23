@@ -236,13 +236,14 @@
       <section class="card" id="raceEdit" hidden>${raceForm(r)}<div class="row"><button class="btn primary" id="saveRace">保存</button></div></section>
       ${an ? `<section class="patterns">${an.patterns.map((p, i) => `<div class="pat"><span class="pnum">展開${i + 1}</span><b>${esc(p.name)}</b><span class="prob">${p.probability.toFixed(1)}%</span><p>${esc(p.summary)}</p></div>`).join("")}<p class="muted">分析日時 ${esc(r.analyzedAt)}。基準オッズ＝この単勝オッズを超えれば回収率100%超え</p></section>` : ""}
       <div class="tablewrap"><table class="card-table">
-        <thead><tr><th>馬番</th><th>馬名</th>${hasRes ? '<th class="n">着順</th><th class="n">着差</th>' : ""}<th>性</th><th>脚質</th><th>馬体の特徴</th><th>好走時の展開</th><th>予想</th>
+        <thead><tr><th>馬番</th><th>馬名</th><th>パドック映像</th>${hasRes ? '<th class="n">着順</th><th class="n">着差</th>' : ""}<th>性</th><th>脚質</th><th>馬体の特徴</th><th>好走時の展開</th><th>予想</th>
           ${an ? an.patterns.map((p, i) => `<th class="n">展開${i + 1}</th>`).join("") + `<th class="n">総合勝率</th><th class="n">基準オッズ</th>` : ""}<th></th></tr></thead>
         <tbody>${ents.length ? ents.map(e => {
           const h = horse(e.horseId) || {}; const g = goodSummary(e.horseId); const ov = overall(e);
           return `<tr>
             <td class="n umaban"><input type="number" inputmode="numeric" min="1" max="18" class="umaban-in" data-umaban="${esc(e.id)}" value="${esc(e.umaban)}" aria-label="${esc((horse(e.horseId) || {}).name)}の馬番"></td>
             <td><a href="#/horse/${encodeURIComponent(h.id)}"><b>${esc(h.name)}</b></a></td>
+            <td class="movie">${e.movie ? `<a class="btn small primary" href="${esc(e.movie)}" target="_blank" rel="noopener noreferrer">▶ 見る</a> <button class="btn small linkbtn" data-movie-edit="${esc(e.id)}">変更</button>` : ""}<input type="url" class="movie-in" data-movie="${esc(e.id)}" value="${esc(e.movie || "")}" placeholder="映像のURLを貼り付け" aria-label="${esc(h.name)}のパドック映像のURL" ${e.movie ? "hidden" : ""}></td>
             ${hasRes ? `<td class="n"><b>${esc(e.finish)}</b></td><td class="n">${esc(e.margin)}</td>` : ""}
             <td>${esc(h.sex)}</td>
             <td>${styles(h).map(s => `<span class="pill">${esc(s)}</span>`).join(" ")}</td>
@@ -263,6 +264,12 @@
         </div>
         <div id="addMatch"></div>
         <p class="muted">馬番は枠順が決まっていなければ空欄のままで追加でき、あとから表の中で入力できます。性別は新しく登録する馬（性別が未入力の馬）にだけ入ります。</p>
+      </section>
+
+      <section class="card"><h2 class="sub3">パドック映像のリンクをまとめて貼り付け</h2>
+        <p class="muted" style="margin-top:0">netkeibaのパドック映像のページ（各馬の映像へのリンクが並んだページ）で、一覧を選択してコピーし、下の欄に貼り付けて「反映」を押すと、馬名で照らし合わせて各馬にリンクが入ります。1頭ずつなら、表の「パドック映像」の欄に映像ページのURLを貼り付けてください。</p>
+        <textarea id="movieBulk" rows="4" placeholder="ここに貼り付け"></textarea>
+        <div class="row"><button class="btn primary" id="movieApply">反映</button><span class="muted" id="movieInfo"></span></div>
       </section>
 
       <section class="card review"><h2 class="sub3">レースのふり返り</h2>
@@ -367,6 +374,25 @@
     { const ta = $("#raceReview"); const fit = () => { ta.style.height = "auto"; ta.style.height = Math.max(ta.scrollHeight + 2, 100) + "px"; };
       fit(); ta.addEventListener("input", fit);
       ta.addEventListener("change", () => run(null, async () => { if ((r.review || "") === ta.value) return; r.review = ta.value; await save("races", r); toast("レースのふり返りを保存しました"); })); }
+    // パドック映像のリンク：1頭ずつ（表の中）
+    const okUrl = u => /^https:\/\/[^\s"'<>]+$/.test(u);
+    document.querySelectorAll("[data-movie-edit]").forEach(b => b.onclick = () => { const inp = document.querySelector(`[data-movie="${b.dataset.movieEdit}"]`); inp.hidden = false; inp.focus(); inp.select(); });
+    document.querySelectorAll("[data-movie]").forEach(inp => inp.addEventListener("change", () => run(null, async () => {
+      const en = entry(inp.dataset.movie), u = inp.value.trim(); if (!en || (en.movie || "") === u) return;
+      if (u && !okUrl(u)) { showError("https:// で始まるURLを貼り付けてください"); return; }
+      en.movie = u; await save("entries", en); toast(`${(horse(en.horseId) || {}).name}のパドック映像を${u ? "保存" : "消去"}しました`); render();
+    })));
+    // パドック映像のリンク：まとめて（コピーしたページから、馬名とリンクを照らし合わせる）
+    let movieHtml = "";
+    $("#movieBulk").addEventListener("paste", ev => { movieHtml = (ev.clipboardData && ev.clipboardData.getData("text/html")) || ""; });
+    $("#movieBulk").addEventListener("input", () => { if (!$("#movieBulk").value.trim()) movieHtml = ""; });
+    $("#movieApply").onclick = ev => run(ev.target, async () => {
+      const found = moviesFromPaste(movieHtml, $("#movieBulk").value, ents);
+      if (!found.size) { showError("出馬表の馬名と映像のリンクを見つけられませんでした。ページの一覧を選択してコピーし直すか、表の欄に1頭ずつURLを貼り付けてください"); return; }
+      let n = 0; for (const [eid, u] of found) { const en = entry(eid); if (en && en.movie !== u) { en.movie = u; await save("entries", en); n++; } }
+      const miss = ents.filter(e => !found.has(e.id)).map(e => (horse(e.horseId) || {}).name);
+      movieHtml = ""; toast(`${found.size}頭のパドック映像のリンクを入れました` + (miss.length ? `（見つからなかった馬：${miss.join("、")}）` : "")); render();
+    });
     // 予想：表の中で書いて、欄から離れたら保存（出走記録の「予想」と同じもの）
     document.querySelectorAll("[data-pred]").forEach(ta => {
       const fit = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight + 2, 240) + "px"; };
@@ -408,6 +434,27 @@
   // 読み取る項目：年月日・開催場・レース名・クラス・芝ダート・距離・馬場状態・ラップ、各馬の馬番・馬名・着順・着差（1着とのタイム差）
   const RES_FIELDS = [["date", "日付"], ["venue", "開催場"], ["raceNo", "レース番号"], ["raceName", "レース名"], ["cls", "クラス"], ["surface", "芝／ダート"], ["distance", "距離（m）"], ["going", "馬場状態"], ["lap", "ラップ"]];
   const OCR_ERR = { nokey: "Vision APIのAPIキーが未設定です。設定画面で入力してください", offline: "通信できません", network: "読み取りの通信に失敗しました", http403: "APIキーが使えませんでした。キーの制限設定を確認してください", http429: "本日の読み取り上限に達しました" };
+  // 貼り付けたページ（HTMLか文字）を前から順に読み、馬名が出てきたら、その後の最初の映像リンクをその馬に入れる
+  function moviesFromPaste(html, text, ents) {
+    const names = ents.map(e => ({ id: e.id, key: normName((horse(e.horseId) || {}).name || "") })).filter(x => x.key.length >= 2)
+      .sort((a, b) => b.key.length - a.key.length);
+    const seq = []; // {t: 文字} か {u: URL}
+    if (html) {
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      const walk = n => { if (n.nodeType === 3) { seq.push({ t: n.nodeValue }); return; } if (n.nodeType !== 1) return;
+        if (n.tagName === "A") { if (n.title) seq.push({ t: n.title }); n.childNodes.forEach(walk); const href = n.getAttribute("href") || ""; if (href) seq.push({ u: href }); return; }
+        n.childNodes.forEach(walk); };
+      walk(doc.body);
+    } else (text || "").split(/(https?:\/\/[^\s"'<>）)]+)/).forEach((p, i) => seq.push(i % 2 ? { u: p } : { t: p }));
+    const out = new Map(); let cur = null;
+    for (const x of seq) {
+      if (x.t != null) { const t = normName(x.t); const hit = names.find(nm => t.includes(nm.key)); if (hit) cur = hit.id; continue; }
+      let u = x.u; try { u = new URL(u, "https://race.sp.netkeiba.com/").href; } catch (e) { continue; }
+      if (!/^https:\/\//.test(u) || !/paddock_movie|movie|video|youtube|youtu\.be/i.test(u)) continue;
+      if (cur && !out.has(cur)) { out.set(cur, u); cur = null; }
+    }
+    return out;
+  }
   const blankEntry = (hid, rid) => ({ id: newId("E"), horseId: hid, raceId: rid, umaban: "", img1: "", img2: "", anno1: "", anno2: "", finish: "", margin: "", weight: "", result: "", prediction: "", review: "" });
 
   // 日付なしで登録したレースを、同じ日付つきのレースへまとめる（同じ馬の記録は1つに）
@@ -415,7 +462,7 @@
     for (const en of D.entries.filter(x => x.raceId === src.id)) {
       const same = D.entries.find(x => x.raceId === dst.id && x.horseId === en.horseId);
       if (same) {
-        ["img1", "img2", "anno1", "anno2", "weight", "umaban", "prediction", "review", "result", "finish", "margin"].forEach(k => { if (!same[k] && en[k]) same[k] = en[k]; });
+        ["img1", "img2", "anno1", "anno2", "weight", "umaban", "prediction", "review", "result", "finish", "margin", "movie"].forEach(k => { if (!same[k] && en[k]) same[k] = en[k]; });
         await save("entries", same); await B.remove("entries", [en.id]); D.entries = D.entries.filter(x => x.id !== en.id);
       } else { en.raceId = dst.id; await save("entries", en); }
     }
@@ -786,6 +833,7 @@ ${JSON.stringify(data, null, 1)}`;
           <label>馬体重（kg）<input type="number" inputmode="numeric" id="eweight" data-f="eweight" value="${esc(e.weight)}"></label>
           <label>結果区分<select id="eresult" data-f="eresult">${opts(RESULTS, e.result)}</select></label>
           <label>馬番<input type="number" inputmode="numeric" id="eumaban" data-f="eumaban" value="${esc(e.umaban)}"></label>
+          <label>パドック映像のURL${e.movie ? ` <a href="${esc(e.movie)}" target="_blank" rel="noopener noreferrer">▶ 見る</a>` : ""}<input type="url" id="emovie" data-f="emovie" value="${esc(e.movie || "")}" placeholder="https://…"></label>
         </div></section>
         <section class="card"><h2>この馬の情報</h2>${horseFields(h).replace('<label>名前<input type="text" id="hname" data-f="hname" value="' + esc(h.name) + '"></label>', "")}</section>
       </div>
@@ -881,7 +929,7 @@ ${JSON.stringify(data, null, 1)}`;
     $("#saveEntry").onclick = ev => run(ev.target, async () => {
       const f = readRaceForm(); if (!f.date && !(f.venue && f.raceNo)) { showError("レース条件の日付、または開催場とレース番号を入力してください"); return; }
       const dup = f.venue && f.raceNo && findRace(f.date, f.venue, f.raceNo); if (dup && dup.id !== r.id) { showError("同じ日付・開催場・レース番号のレースが別にあります"); return; }
-      Object.assign(e, { finish: $("#efinish").value, margin: $("#emargin").value.trim(), weight: $("#eweight").value, result: $("#eresult").value, umaban: $("#eumaban").value ? String(+$("#eumaban").value) : "", prediction: $("#epred").value, review: $("#ereview").value });
+      Object.assign(e, { finish: $("#efinish").value, margin: $("#emargin").value.trim(), weight: $("#eweight").value, result: $("#eresult").value, umaban: $("#eumaban").value ? String(+$("#eumaban").value) : "", prediction: $("#epred").value, review: $("#ereview").value, movie: ((u) => !u || /^https:\/\/\S+$/.test(u) ? u : (e.movie || ""))($("#emovie").value.trim()) });
       await save("entries", e);
       const hv = readHorse(); delete hv.name;
       if (hv.sex !== (h.sex || "") || hv.styles !== (h.styles || "") || hv.body !== (h.body || "")) await save("horses", Object.assign(h, hv));
@@ -919,7 +967,7 @@ ${JSON.stringify(data, null, 1)}`;
 
   /* ================= 起動 ================= */
   // 新しい版が公開されていたら1回だけ自動で読み込み直す（古いファイルが残る対策）
-  const APP_VERSION = "27";
+  const APP_VERSION = "28";
   async function checkUpdate() {
     if (!/github\.io$/.test(location.hostname)) return false;
     try {
