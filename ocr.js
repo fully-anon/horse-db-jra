@@ -30,65 +30,6 @@
   }
 
   const nfkc = s => (s || "").normalize("NFKC");
-  const KATA = /[ァ-ヺー]{2,9}/g;
-  function longestKatakana(s) { const m = nfkc(s).match(KATA) || []; return m.sort((a, b) => b.length - a.length)[0] || ""; }
-
-  /**
-   * words: Vision の textAnnotations（先頭の全文を除く）, w/h: 画像サイズ
-   * 戻り値：{ venue, raceNo, umaban, name, weight, telop, missing[] }
-   */
-  function parsePaddock(words, w, h) {
-    const lines = toLines(words || []);
-    const out = { venue: "", raceNo: "", umaban: "", name: "", weight: "", telop: false, missing: [] };
-    const top = lines.filter(l => l.cy < h * 0.25 && l.x0 < w * 0.55);
-    const bottom = lines.filter(l => l.cy > h * 0.68);
-    const rest = lines;
-
-    // 下部テロップがあるか（「kg」を含む行があるか）
-    // 映像だけの画像では下部、ページ全体のスクリーンショットでは中ほどにある。一番下の「000kg」の行を採る
-    const telopLine = lines.filter(l => l.cy > h * 0.25 && /\d{3}\s*kg/i.test(nfkc(l.text)) && !/\(\s*[+\-−]?\d+\s*\)/.test(nfkc(l.text))).sort((a, b) => b.cy - a.cy)[0];
-    out.telop = !!telopLine;
-
-    // 開催場：左上テロップ優先、なければ全体
-    const findVenue = ls => { for (const l of ls) { const t = nfkc(l.text); const v = VENUES.find(x => t.includes(x)); if (v) return v; } return ""; };
-    out.venue = findVenue(top) || (out.telop ? findVenue(rest) : "");
-
-    // レース番号：「11R」の形。左上テロップ優先、なければゼッケン
-    // 「◀11R」のような前後レースへの移動ボタンは除き、いちばん多く出てくる番号を採る（テロップ・ゼッケン・ページ見出し）
-    const findRace = ls => {
-      const cnt = {}; let first = "";
-      ls.forEach(l => { const re = /(^|[^◀◁<▶▷>\d])(\d{1,2})\s*R(?![a-z])/gi; let m; const s = nfkc(l.text); while ((m = re.exec(s))) if (+m[2] >= 1 && +m[2] <= 12) { cnt[+m[2]] = (cnt[+m[2]] || 0) + 1; if (!first) first = String(+m[2]); } });
-      const best = Object.entries(cnt).sort((a, b) => b[1] - a[1])[0];
-      return best && best[1] > 1 ? best[0] : first;
-    };
-    out.raceNo = findRace(rest) || findRace(top);
-
-    if (telopLine) {
-      const t = nfkc(telopLine.text);
-      // 馬体重
-      const wm = /(\d{3})\s*kg/i.exec(t); if (wm) out.weight = wm[1];
-      // 馬番：テロップ行の左端の数字
-      const first = telopLine.items.find(i => /^\d{1,2}$/.test(nfkc(i.t)));
-      if (first && first.x0 < telopLine.x0 + (telopLine.x1 - telopLine.x0) * 0.25 && +nfkc(first.t) >= 1 && +nfkc(first.t) <= 18) out.umaban = String(+nfkc(first.t));
-      // 馬名：テロップ行のカタカナ
-      out.name = longestKatakana(telopLine.items.filter(i => !/kg/i.test(i.t)).map(i => i.t).join(""));
-      if (!out.name) { const near = lines.filter(l => l !== telopLine && Math.abs(l.cy - telopLine.cy) < telopLine.h * 3).map(l => longestKatakana(l.text)).find(Boolean); out.name = near || ""; }
-    }
-    // テロップがない、または取れなかった項目はゼッケンから
-    if (!out.name) {
-      const cands = lines.filter(l => l.cy > h * 0.12 && l.cy < h * 0.8).map(l => longestKatakana(l.text)).filter(Boolean);
-      out.name = cands.sort((a, b) => b.length - a.length)[0] || "";
-    }
-    if (!out.umaban) {
-      // ゼッケンの大きな数字（1〜18）。一番文字が大きいものを採用
-      const nums = [];
-      lines.forEach(l => l.items.forEach(i => { const t = nfkc(i.t); if (/^\d{1,2}$/.test(t) && +t >= 1 && +t <= 18 && i.cy > h * 0.1) nums.push({ n: +t, h: i.h }); }));
-      nums.sort((a, b) => b.h - a.h);
-      if (nums[0]) out.umaban = String(nums[0].n);
-    }
-    [["name", "馬名"], ["venue", "開催場"], ["raceNo", "レース番号"], ["umaban", "馬番"], ["weight", "馬体重"]].forEach(([k, l]) => { if (!out[k]) out.missing.push(l); });
-    return out;
-  }
 
   /* ---------------- 馬名の正規化と照合 ---------------- */
   const SMALL = { "ァ": "ア", "ィ": "イ", "ゥ": "ウ", "ェ": "エ", "ォ": "オ", "ッ": "ツ", "ャ": "ヤ", "ュ": "ユ", "ョ": "ヨ", "ヮ": "ワ" };
@@ -500,5 +441,5 @@
   }
   function normLap(s, distance) { return formatLap(lapPairs(s, distance)); }
 
-  window.Paddock = { VENUES, parsePaddock, normName, matchHorse, parseResultImages, inferDate, normLap, lapPairs, lapMarks, formatLap };
+  window.Paddock = { VENUES, normName, matchHorse, parseResultImages, inferDate, normLap, lapPairs, lapMarks, formatLap };
 })();

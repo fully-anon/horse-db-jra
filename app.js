@@ -2,11 +2,10 @@
 (function () {
   "use strict";
   const { Auth, Settings, AuthError, NetError, shrinkImage, newId, nowStr } = window.Store;
-  const { VENUES, parsePaddock, matchHorse, normName, parseResultImages, normLap, lapPairs, lapMarks, formatLap } = window.Paddock;
+  const { VENUES, matchHorse, normName, parseResultImages, normLap, lapPairs, lapMarks, formatLap } = window.Paddock;
   const CLASSES = ["新馬", "未勝利", "1勝", "2勝", "3勝", "OP", "L", "G3", "G2", "G1"];
   const SURFACES = ["芝", "ダート"], GOINGS = ["良", "稍重", "重", "不良"], SEXES = ["牡", "牝", "セン"];
   const STYLES = ["逃げ", "先行", "差し", "追込", "自在"], RESULTS = ["好走", "凡走", "大敗"];
-  const SLOT = ["後肢伸展時", "後肢垂直時"];
 
   const esc = t => String(t == null ? "" : t).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const $ = s => document.querySelector(s);
@@ -230,7 +229,7 @@
       <div class="head"><div><p class="eyebrow">${provisional ? '出馬表 <span class="pill warn">仮・枠順未確定</span>' : "出馬表"}</p><h1>${esc(raceTitle(r))}</h1><p class="sub">${esc(raceCond(r) || "条件未入力")}</p></div>
         <div class="row"><button class="btn" id="editRace">レース条件を編集</button><button class="btn danger" id="delRace">レースを削除</button></div></div>
       <div id="delRaceBox"></div>
-      ${noNum.length ? banner(`馬番が入っていない馬が${noNum.length}頭います（${noNum.map(e => esc((horse(e.horseId) || {}).name || "")).join("、")}）。馬番は表の中で入力できます。確定した出馬表にいなかった馬（回避・除外など）なら、「記録・パドック」から削除してください。`) : ""}
+      ${noNum.length ? banner(`馬番が入っていない馬が${noNum.length}頭います（${noNum.map(e => esc((horse(e.horseId) || {}).name || "")).join("、")}）。馬番は表の中で入力できます。確定した出馬表にいなかった馬（回避・除外など）なら、「記録」から削除してください。`) : ""}
       ${provisional ? banner("枠順が決まる前の仮の出馬表です。枠順が決まったら、下の「出馬表（レース前）」で確定した出馬表の画像を読み取ると、馬番が入ります。") : ""}
       ${r.lap ? `<section class="lapsec"><h2 class="sub3">ラップ</h2>${lapTable(r.lap, r.distance)}</section>` : ""}
       <section class="card" id="raceEdit" hidden>${raceForm(r)}<div class="row"><button class="btn primary" id="saveRace">保存</button></div></section>
@@ -250,7 +249,7 @@
             <td class="wrap">${g.paces.length ? `<ul class="paces">${g.paces.slice(0, 3).map(p => `<li><span class="muted">${esc(p.race ? p.race.date : "")}</span> ${esc(p.text)}</li>`).join("")}</ul>${g.paces.length > 3 ? `<span class="muted">ほか${g.paces.length - 3}件</span>` : ""}` : '<span class="muted">—</span>'}</td>
             <td class="pred"><textarea class="predin" data-pred="${esc(e.id)}" rows="2" placeholder="予想を書く" aria-label="${esc(h.name)}の予想">${esc(e.prediction)}</textarea></td>
             ${an ? an.patterns.map(p => `<td class="n">${p.rates[e.id] != null ? p.rates[e.id].toFixed(1) + "%" : "—"}</td>`).join("") + `<td class="n"><b>${ov ? pct(ov) : "—"}</b></td><td class="n"><b class="odds">${ov ? (1 / ov).toFixed(1) + "倍" : "—"}</b></td>` : ""}
-            <td><a class="btn small" href="#/entry/${encodeURIComponent(e.id)}">記録・パドック</a></td></tr>`;
+            <td><a class="btn small" href="#/entry/${encodeURIComponent(e.id)}">記録</a></td></tr>`;
         }).join("") : `<tr><td colspan="10" class="empty">出走予定馬を、画像の読み取りか、すぐ下の「馬を手入力で追加」で追加してください</td></tr>`}</tbody>
       </table></div>
 
@@ -541,13 +540,13 @@
             <td id="is_${i}"></td></tr>`).join("")}
           </tbody></table></div>` : ""}
         ${rows.length || FIELDS.some(([k]) => rr[k]) ? `<div class="row"><button class="btn primary" id="resApply">${isCard ? "出馬表を登録する" : "結果を登録する"}</button><button class="btn" id="resCancel">やめる</button></div>
-          <p class="muted">${isCard ? "レースが終わったら、このレースの画面で「結果（レース後）」の画像を読み取ってください。" : "結果区分（好走／凡走／大敗）やパドック画像・メモは、各馬の「記録・パドック」から入力してください。"}</p>` : ""}
+          <p class="muted">${isCard ? "レースが終わったら、このレースの画面で「結果（レース後）」の画像を読み取ってください。" : "結果区分（好走／凡走／大敗）やパドック画像・メモは、各馬の「記録」から入力してください。"}</p>` : ""}
         <details class="dbg"><summary>読み取りがうまくいかないとき</summary>
           <p class="muted">下のボタンで、文字認識の結果（文字と位置）をコピーできます。Claude とのチャットに貼り付けてもらえれば、読み取りのルールを調整できます。画像そのものや Google の情報は含まれません。</p>
           <div class="row"><button class="btn small" id="dbgCopy">読み取りの詳細をコピー</button></div><textarea id="dbgText" class="mono" rows="4" hidden readonly></textarea></details>`;
 
       const form = () => { const f = {}; FIELDS.forEach(([k]) => { const el = $("#iv_" + k); f[k] = el ? String(el.value || "").trim() : ""; }); if (f.raceNo) f.raceNo = String(+f.raceNo); if (FIELDS.some(([k]) => k === "lap")) f.lap = readLap("iv_"); return f; };
-      // 反映先のレース：日付・開催場・レース番号で探す。日付なしで先に登録したレース（パドック登録）も拾う
+      // 反映先のレース：日付・開催場・レース番号で探す。日付なしで先に登録したレースも拾う
       const findTarget = f => {
         if (fixedRace) {
           const twin = !fixedRace.date && f.date && f.venue && f.raceNo ? findRace(f.date, f.venue, f.raceNo) : null;
@@ -707,7 +706,7 @@ ${JSON.stringify(data, null, 1)}`;
       $("#horseList").innerHTML = rows.length ? rows.map(h => {
         const n = entriesOfHorse(h.id).length, g = goodSummary(h.id);
         return `<li><a class="item" href="#/horse/${encodeURIComponent(h.id)}"><span class="t">${esc(h.name)} <span class="muted">${esc(h.sex)}</span></span><span class="s">${styles(h).join("・") || "脚質未入力"}・出走${n}・好走${g.count}${g.weight ? "・好走時 " + esc(g.weight) : ""}</span></a></li>`;
-      }).join("") : `<li class="empty">${D.horses.length ? "該当する馬はいません" : "まだ馬がいません。パドック登録か出馬表の作成で自動的に登録されます。"}</li>`;
+      }).join("") : `<li class="empty">${D.horses.length ? "該当する馬はいません" : "まだ馬がいません。出馬表の作成で自動的に登録されます。"}</li>`;
     };
     $("#hq").oninput = draw; draw();
   }
@@ -732,12 +731,11 @@ ${JSON.stringify(data, null, 1)}`;
         <section class="card"><h2>好走時の馬体重</h2><p class="big">${g.weight || "—"}</p><p class="muted">好走 ${g.count}回</p></section>
       </div>
       <section><h2>出走履歴</h2><ul class="runs">${ents.length ? ents.map(e => {
-        const r = race(e.raceId) || {}; const rs = [...window.Sketch.ratios(parseJSON(e.anno1, null)), ...window.Sketch.ratios(parseJSON(e.anno2, null))].filter(x => x.value);
-        return `<li><a class="run" href="#/entry/${encodeURIComponent(e.id)}"><span class="thumb" data-img="${esc(e.img1)}"></span>
-          <span class="body"><span class="t">${esc(raceTitle(r))}</span><span class="s">${esc(raceCond(r))}${e.finish ? "・" + esc(e.finish) + "着" : ""}${e.weight ? "・" + esc(e.weight) + "kg" : ""}${rs.length ? "・" + rs.map(x => esc(x.name) + " " + x.value.toFixed(3)).join("、") : ""}</span></span>
+        const r = race(e.raceId) || {};
+        return `<li><a class="run" href="#/entry/${encodeURIComponent(e.id)}">
+          <span class="body"><span class="t">${esc(raceTitle(r))}</span><span class="s">${esc(raceCond(r))}${e.finish ? "・" + esc(e.finish) + "着" : ""}${e.weight ? "・" + esc(e.weight) + "kg" : ""}</span></span>
           ${e.result ? `<span class="res r-${RESULTS.indexOf(e.result)}">${esc(e.result)}</span>` : ""}</a></li>`;
       }).join("") : '<li class="empty">出走記録はまだありません</li>'}</ul></section>`;
-    loadThumbs();
     $("#delHorse").onclick = () => {
       const list = entriesOfHorse(h.id), ni = imgCount(list);
       askDelete($("#delHorseBox"), `<b>${esc(h.name)}</b> を削除します。<br>この馬の出走記録 ${list.length}件${ni ? `（パドック画像 ${ni}枚、線と比率を含む）` : ""}も一緒に消え、出馬表からも外れます。レースそのものは残ります。${ni ? "<br>画像はGoogleドライブのゴミ箱に移り、30日間は元に戻せます。" : ""}`,
@@ -753,32 +751,13 @@ ${JSON.stringify(data, null, 1)}`;
       await save("horses", Object.assign(h, v)); toast("保存しました"); render();
     });
   }
-  async function loadThumbs() {
-    for (const el of document.querySelectorAll("[data-img]")) {
-      const id = el.dataset.img; if (!id) { el.classList.add("none"); continue; }
-      try { const u = await B.imageURL(id); if (u && el.isConnected) el.style.backgroundImage = `url("${u}")`; } catch (e) { if (e instanceof AuthError) { showRelogin(); return; } }
-    }
-  }
-
   /* ================= 出走記録 ================= */
   function viewEntry(id) {
     const e = entry(id); if (!e) { main().innerHTML = banner("出走記録が見つかりません"); return; }
     const h = horse(e.horseId) || {}, r = race(e.raceId) || {};
-    const anno = [parseJSON(e.anno1, null), parseJSON(e.anno2, null)];
-    const imgs = [e.img1, e.img2];
     main().innerHTML = `
       <div class="head"><div><p class="eyebrow">出走記録</p><h1><a href="#/horse/${encodeURIComponent(h.id)}">${esc(h.name)}</a>${e.umaban ? ` <span class="muted">${esc(e.umaban)}番</span>` : ""}</h1>
         <p class="sub"><a href="#/race/${encodeURIComponent(r.id)}">${esc(raceTitle(r))}</a></p></div></div>
-      <section class="card"><div class="cardhead"><h2>パドック画像</h2>
-        <div class="seg" role="group" aria-label="線の表示"><button class="segb" id="annoShow" aria-pressed="true">線を表示</button><button class="segb" id="annoHide" aria-pressed="false">線を非表示</button></div></div>
-        <div class="slots" id="entrySlots">${SLOT.map((s, i) => `
-        <div class="slot2"><span class="slabel">${i + 1}枚目　${s}</span>
-          <button class="sprev big" data-sketch="${i}" ${imgs[i] ? "" : "disabled"} id="sk${i}">${imgs[i] ? '<span class="muted">読み込み中…</span>' : '<span class="muted">画像なし</span>'}</button>
-          <div class="chips" id="chips${i}">${window.Sketch.ratios(anno[i]).map(x => `<span class="pill">${esc(x.name)} <b>${x.value ? x.value.toFixed(3) : "—"}</b></span>`).join("")}</div>
-          <div class="row"><button class="btn small" data-sketch="${i}" ${imgs[i] ? "" : "disabled"}>線を引く・比率を測る</button>
-          <label class="btn small filebtn">${imgs[i] ? "画像を差し替え" : "画像を追加"}<input type="file" accept="image/*" data-replace="${i}"></label>
-          <button class="btn small" data-epaste="${i}">${imgs[i] ? "貼り付けで差し替え" : "貼り付けで追加"}</button></div>
-        </div>`).join("")}</div></section>
       <div class="two">
         <section class="card"><h2>結果</h2><div class="grid form">
           <label>着順<input type="number" inputmode="numeric" id="efinish" data-f="efinish" value="${esc(e.finish)}"></label>
@@ -795,81 +774,6 @@ ${JSON.stringify(data, null, 1)}`;
       <section class="card"><h2>この出走記録を削除</h2><p class="muted">出馬表から外したいときや、間違えて登録したときに使います。馬とレースは残ります。</p><div class="row"><button class="btn danger" id="delEntry">出走記録を削除</button></div><div id="delEntryBox"></div></section>
       <div class="savebar"><button class="btn primary" id="saveEntry">保存</button></div>`;
 
-    // サムネイル（保存した線を重ねて表示）
-    const imgSize = [null, null];
-    function drawOverlay(i) {
-      const box = $("#sk" + i); if (!box || !imgSize[i]) return;
-      const old = box.querySelector(".ov"); if (old) old.remove();
-      box.insertAdjacentHTML("beforeend", window.Sketch.overlay(anno[i], imgSize[i].w, imgSize[i].h));
-    }
-    imgs.forEach(async (iid, i) => {
-      if (!iid) return;
-      try {
-        const u = await B.imageURL(iid); if (!u) return;
-        const box = $("#sk" + i); box.innerHTML = `<img src="${u}" alt="${SLOT[i]}">`;
-        const im = box.querySelector("img");
-        const done = () => { imgSize[i] = { w: im.naturalWidth, h: im.naturalHeight }; drawOverlay(i); };
-        if (im.complete && im.naturalWidth) done(); else im.addEventListener("load", done, { once: true });
-      } catch (err) { if (err instanceof AuthError) showRelogin(); }
-    });
-    // 線の表示・非表示（2枚まとめて切り替え。設定はこの端末に記憶）
-    const applyAnnoVis = () => {
-      const show = Settings.get("hideAnno") !== "1";
-      $("#entrySlots").classList.toggle("hide-ov", !show);
-      $("#annoShow").setAttribute("aria-pressed", show); $("#annoHide").setAttribute("aria-pressed", !show);
-    };
-    $("#annoShow").onclick = () => {
-      Settings.set("hideAnno", ""); applyAnnoVis();
-      if (!anno.some(a => a && ((a.lines || []).length || (a.strokes || []).length))) toast("この出走記録には、まだ保存した線がありません。「線を引く・比率を測る」で線を引いて「完了」を押すと表示されます");
-    };
-    $("#annoHide").onclick = () => { Settings.set("hideAnno", "1"); applyAnnoVis(); };
-    applyAnnoVis();
-
-    main().addEventListener("click", async ev => {
-      const b = ev.target.closest("[data-sketch]"); if (!b || b.disabled) return;
-      const i = +b.dataset.sketch;
-      await run(null, async () => {
-        const u = await B.imageURL(imgs[i]); if (!u) { showError("画像を読み込めませんでした"); return; }
-        const res = await window.Sketch.open({ url: u, label: `${h.name}　${i + 1}枚目　${SLOT[i]}`, data: anno[i] });
-        if (!res) return;
-        anno[i] = res; e["anno" + (i + 1)] = JSON.stringify(res);
-        await save("entries", e); toast("書き込みを保存しました");
-        $("#chips" + i).innerHTML = window.Sketch.ratios(res).map(x => `<span class="pill">${esc(x.name)} <b>${x.value ? x.value.toFixed(3) : "—"}</b></span>`).join("");
-        drawOverlay(i);
-        Settings.set("hideAnno", ""); applyAnnoVis();
-      });
-    });
-    document.querySelectorAll("[data-replace]").forEach(inp => inp.addEventListener("change", ev => {
-      const i = +inp.dataset.replace, f = inp.files && inp.files[0]; inp.value = ""; if (f) replaceImage(i, f);
-    }));
-    main().addEventListener("click", async ev => {
-      const b = ev.target.closest("[data-epaste]"); if (!b) return;
-      const i = +b.dataset.epaste;
-      if (imgs[i] && b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "線と比率も消えます。もう一度押すと差し替え"; setTimeout(() => { if (b.isConnected) { b.dataset.sure = ""; b.textContent = "貼り付けで差し替え"; } }, 4000); return; }
-      const f = await readClipboardImage();
-      if (f instanceof Blob) replaceImage(i, f);
-      else if (f === "noimage") toast("クリップボードに画像がありません。画像をコピーしてから押してください");
-      else toast("貼り付けできませんでした。PCでは Ctrl＋V（Macは ⌘＋V）で貼り付けてください");
-    });
-    // Ctrl+V：画像がない枠にだけ入れる（差し替えはボタンから）
-    onPaste = ev => {
-      const f = imageFromPasteEvent(ev); if (!f) return;
-      const i = !imgs[0] ? 0 : !imgs[1] ? 1 : -1;
-      if (i < 0) { toast("画像は2枚とも登録済みです。差し替えは「貼り付けで差し替え」ボタンから行ってください"); return; }
-      ev.preventDefault(); replaceImage(i, f);
-    };
-    async function replaceImage(i, f) {
-      await run(null, async () => {
-        const s = await shrinkImage(f);
-        const nid = await B.putImage(s.blob, `${r.date}_${r.venue}${r.raceNo}R_${e.umaban}_${h.name}_${i + 1}.jpg`);
-        e["img" + (i + 1)] = nid; e["anno" + (i + 1)] = "";
-        if (i === 0 && (!e.weight || !e.umaban)) {
-          const o = await B.ocr(s.blob);
-          if (!o.error) { const p = parsePaddock(o.words, s.width, s.height); if (!e.weight && p.weight) e.weight = p.weight; if (!e.umaban && p.umaban) e.umaban = p.umaban; }
-        }
-        await save("entries", e); toast("画像を保存しました"); render();
-      });
-    }
     $("#delEntry").onclick = () => {
       const ni = imgCount([e]);
       askDelete($("#delEntryBox"), `<b>${esc(h.name)}</b> の <b>${esc(raceTitle(r))}</b> の出走記録を削除します。${ni ? `<br>パドック画像 ${ni}枚と線・比率も消えます（画像はGoogleドライブのゴミ箱に移り、30日間は元に戻せます）。` : ""}`,
@@ -919,7 +823,7 @@ ${JSON.stringify(data, null, 1)}`;
 
   /* ================= 起動 ================= */
   // 新しい版が公開されていたら1回だけ自動で読み込み直す（古いファイルが残る対策）
-  const APP_VERSION = "30";
+  const APP_VERSION = "31";
   async function checkUpdate() {
     if (!/github\.io$/.test(location.hostname)) return false;
     try {
